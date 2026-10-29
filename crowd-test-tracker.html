@@ -20,6 +20,12 @@
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+/* Safety net: one stray unbreakable string anywhere on the page (a long cycle name, a chat
+   message with no spaces, a URL) can force the WHOLE page wider than the viewport — on mobile
+   that shows up as the entire screen shifted/scrollable sideways, cutting off unrelated content
+   in every card at once, not just the one with the long string. Capping overflow here means a
+   stray wide element clips instead of dragging the whole layout along with it. */
+html, body { overflow-x: hidden; }
 body { margin: 0; font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.45; }
 button, input, select, textarea { font: inherit; }
 a { color: var(--accent); }
@@ -441,7 +447,7 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
 }
 .cycle-card:hover { border-color: #c7d2fe; }
 .cycle-card-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
-.cycle-card h3 { margin: 0; font-size: 1.05rem; font-weight: 750; }
+.cycle-card h3 { margin: 0; font-size: 1.05rem; font-weight: 750; overflow-wrap: anywhere; }
 .cycle-meta { color: var(--muted); font-size: .82rem; display: flex; flex-wrap: wrap; gap: 8px; }
 .cycle-notes {
   color: var(--text); font-size: .88rem; white-space: pre-wrap;
