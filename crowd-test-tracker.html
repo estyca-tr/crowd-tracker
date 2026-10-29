@@ -6118,6 +6118,13 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       setSyncStatus('error', (err && err.message) || String(err));
     } finally {
       syncConnecting = false;
+      // syncMergeFromRemote() only re-renders when it actually applied a remote change — on a
+      // no-op merge (nothing to pull, e.g. a brand-new or already-matching doc) nothing redraws,
+      // so the test-plan/video upload buttons stay stuck showing their pre-connect disabled
+      // state ("Needs Live sync connected") even though supabaseClient is now set and uploads
+      // would actually work. Always refresh whatever's currently on screen once connecting is
+      // done, success or failure, so those controls reflect the real readiness state.
+      renderAll();
     }
   }
 
@@ -6127,6 +6134,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     syncConfig.autoConnect = false;
     persistSyncConfig();
     setSyncStatus('offline', 'Disconnected — local only');
+    renderAll();
   }
 
 
