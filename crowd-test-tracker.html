@@ -5638,23 +5638,31 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   var syncLastError = '';
   var syncConnecting = false;
 
+  // Built-in default for this team's shared board, so opening the page connects automatically
+  // with no setup step — anyone can still override these in ⚙ Tools & backup → Live sync if they
+  // ever need to point at a different project. The anon/publishable key is meant to be public
+  // (it's already shipped to every browser that loads this page); real access control is the
+  // RLS policies on the Supabase project, and who we hand this file's link to in the first place.
+  var DEFAULT_SYNC_URL = 'https://luafmineuqfglrytfpvj.supabase.co';
+  var DEFAULT_SYNC_ANON_KEY = 'sb_publishable_nSEWbIlHl1FdMKwO0P8mGQ_dXyPNLVI';
+
   function loadSyncConfig() {
     try {
       var raw = localStorage.getItem(SYNC_KEY);
       if (!raw) {
-        return { url: '', anonKey: '', accessCode: '', jiraCode: '', docId: 'main', autoConnect: true };
+        return { url: DEFAULT_SYNC_URL, anonKey: DEFAULT_SYNC_ANON_KEY, accessCode: '', jiraCode: '', docId: 'main', autoConnect: true };
       }
       var o = JSON.parse(raw);
       return {
-        url: (o.url || '').trim(),
-        anonKey: (o.anonKey || '').trim(),
+        url: (o.url || '').trim() || DEFAULT_SYNC_URL,
+        anonKey: (o.anonKey || '').trim() || DEFAULT_SYNC_ANON_KEY,
         accessCode: (o.accessCode || '').trim(),
         jiraCode: (o.jiraCode || '').trim(),
         docId: (o.docId || 'main').trim() || 'main',
         autoConnect: o.autoConnect !== false
       };
     } catch (e) {
-      return { url: '', anonKey: '', accessCode: '', jiraCode: '', docId: 'main', autoConnect: true };
+      return { url: DEFAULT_SYNC_URL, anonKey: DEFAULT_SYNC_ANON_KEY, accessCode: '', jiraCode: '', docId: 'main', autoConnect: true };
     }
   }
 
