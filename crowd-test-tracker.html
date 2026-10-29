@@ -772,6 +772,9 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .testplan-upload { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .8rem; }
 .testplan-status { color: var(--muted); font-size: .75rem; }
 .testplan-err { color:#b45309; font-weight:600; }
+.btn-testplan { background: #059669; color: #fff; border-color: #047857; }
+.btn-testplan:hover { background: #047857; }
+.btn-testplan.is-off { background: var(--surface); color: var(--text); border-color: var(--border); }
 .jb-video-dl-status { font-size: .78rem; color: var(--muted); margin: -4px 0 8px; }
 .jb-video-dl-status > div { margin-top: 2px; }
 .csv-help { padding-left:18px; font-size:.88rem; line-height:1.5; }
@@ -2716,7 +2719,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   function uploadedTestPlanHtml(c) {
     if (!c.testPlanFileUrl) {
       return '<div class="testplan-upload" data-testplan-upload="' + esc(c.id) + '">' +
-        '<label class="btn btn-sm' + (videoResolverReady() ? '' : ' is-off') + '">📋 Upload test plan (Excel)' +
+        '<label class="btn btn-sm btn-testplan' + (videoResolverReady() ? '' : ' is-off') + '">📋 Upload test plan (Excel)' +
         '<input type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" data-testplan-upload-input="' + esc(c.id) + '" style="display:none" ' + (videoResolverReady() ? '' : 'disabled') + ' /></label> ' +
         '<span class="testplan-status" data-testplan-upload-status="' + esc(c.id) + '">' +
         (videoResolverReady() ? '' : 'Needs <strong>Live sync</strong> connected — the file is shared via Supabase Storage.') +
@@ -2724,7 +2727,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     }
     return '<div class="testplan-upload" data-testplan-upload="' + esc(c.id) + '">' +
       '<span class="testplan-name">📋 ' + esc(c.testPlanFileName || 'test plan') + '</span> ' +
-      '<a class="btn btn-sm" href="' + esc(c.testPlanFileUrl) + '" target="_blank" rel="noopener">Open</a>' +
+      '<a class="btn btn-sm btn-testplan" href="' + esc(c.testPlanFileUrl) + '" target="_blank" rel="noopener">Open</a>' +
       '<button type="button" class="btn btn-sm btn-danger" data-action="testplan-upload-remove" data-id="' + esc(c.id) + '">Remove</button>' +
       '<span class="testplan-status" data-testplan-upload-status="' + esc(c.id) + '"></span></div>';
   }
@@ -2742,6 +2745,11 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         if (!url) throw new Error('No public URL returned');
         c.testPlanFileUrl = url;
         c.testPlanFileName = file.name;
+        // persist() only auto-stamps updatedAt on the CURRENTLY OPEN cycle/transaction, and this
+        // upload happens from the cycles landing page where no cycle is open yet — without this,
+        // the per-record sync merge sees an unchanged clock on this cycle and can pick the
+        // remote (pre-upload) copy as the merge winner, silently discarding the just-uploaded file.
+        c.updatedAt = new Date().toISOString();
         persist();
         renderCyclesList();
       })
@@ -2756,6 +2764,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     function setS(html) { if (statusEl) statusEl.innerHTML = html; }
     var url = c.testPlanFileUrl;
     c.testPlanFileUrl = ''; c.testPlanFileName = '';
+    c.updatedAt = new Date().toISOString();   // same reasoning as uploadTestPlanFile above
     persist(); renderCyclesList();
     if (!url || !videoResolverReady()) return;
     var m = url.match(/\/cycle-testplans\/(.+)$/);
