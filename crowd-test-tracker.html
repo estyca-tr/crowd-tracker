@@ -5628,6 +5628,18 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
 
 
   /* ========== Supabase live sync ========== */
+  // Built-in default for this team's shared board, so opening the page connects automatically
+  // with no setup step — anyone can still override these in ⚙ Tools & backup → Live sync if they
+  // ever need to point at a different project. The anon/publishable key is meant to be public
+  // (it's already shipped to every browser that loads this page); real access control is the
+  // RLS policies on the Supabase project, and who we hand this file's link to in the first place.
+  // Declared BEFORE syncConfig/loadSyncConfig() run below — `var` only hoists the declaration,
+  // not the assignment, so defining these any later meant loadSyncConfig()'s very first call (the
+  // next line) saw both still `undefined`, and every brand-new browser silently got no defaults
+  // at all despite the code "being there".
+  var DEFAULT_SYNC_URL = 'https://luafmineuqfglrytfpvj.supabase.co';
+  var DEFAULT_SYNC_ANON_KEY = 'sb_publishable_nSEWbIlHl1FdMKwO0P8mGQ_dXyPNLVI';
+
   var syncConfig = loadSyncConfig();
   var supabaseClient = null;
   var syncChannel = null;
@@ -5637,14 +5649,6 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   var syncSuppressPush = false;
   var syncLastError = '';
   var syncConnecting = false;
-
-  // Built-in default for this team's shared board, so opening the page connects automatically
-  // with no setup step — anyone can still override these in ⚙ Tools & backup → Live sync if they
-  // ever need to point at a different project. The anon/publishable key is meant to be public
-  // (it's already shipped to every browser that loads this page); real access control is the
-  // RLS policies on the Supabase project, and who we hand this file's link to in the first place.
-  var DEFAULT_SYNC_URL = 'https://luafmineuqfglrytfpvj.supabase.co';
-  var DEFAULT_SYNC_ANON_KEY = 'sb_publishable_nSEWbIlHl1FdMKwO0P8mGQ_dXyPNLVI';
 
   function loadSyncConfig() {
     try {
