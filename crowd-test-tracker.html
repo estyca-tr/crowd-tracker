@@ -2717,16 +2717,20 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
    *  cycle instead of a transaction and gated on videoResolverReady() (really just "is Storage
    *  usable right now", not video-specific — reused as-is rather than duplicating the check). */
   function uploadedTestPlanHtml(c) {
+    // A bare icon + filename didn't read as "this is the thing we expect testers to follow" —
+    // label it the same way the brief/notes section labels itself, so it's unambiguous even
+    // before you've read the file name.
+    var label = '<div class="cycle-brief-label">Test plan (Excel)</div>';
     if (!c.testPlanFileUrl) {
-      return '<div class="testplan-upload" data-testplan-upload="' + esc(c.id) + '">' +
-        '<label class="btn btn-sm btn-testplan' + (videoResolverReady() ? '' : ' is-off') + '">📋 Upload test plan (Excel)' +
+      return label + '<div class="testplan-upload" data-testplan-upload="' + esc(c.id) + '">' +
+        '<label class="btn btn-sm btn-testplan' + (videoResolverReady() ? '' : ' is-off') + '">📋 Upload test plan' +
         '<input type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" data-testplan-upload-input="' + esc(c.id) + '" style="display:none" ' + (videoResolverReady() ? '' : 'disabled') + ' /></label> ' +
         '<span class="testplan-status" data-testplan-upload-status="' + esc(c.id) + '">' +
         (videoResolverReady() ? '' : 'Needs <strong>Live sync</strong> connected — the file is shared via Supabase Storage.') +
         '</span></div>';
     }
-    return '<div class="testplan-upload" data-testplan-upload="' + esc(c.id) + '">' +
-      '<span class="testplan-name">📋 ' + esc(c.testPlanFileName || 'test plan') + '</span> ' +
+    return label + '<div class="testplan-upload" data-testplan-upload="' + esc(c.id) + '">' +
+      '<span class="testplan-name">📋 Test plan: <strong>' + esc(c.testPlanFileName || 'test plan') + '</strong></span> ' +
       '<a class="btn btn-sm btn-testplan" href="' + esc(c.testPlanFileUrl) + '" target="_blank" rel="noopener">Open</a>' +
       '<button type="button" class="btn btn-sm btn-danger" data-action="testplan-upload-remove" data-id="' + esc(c.id) + '">Remove</button>' +
       '<span class="testplan-status" data-testplan-upload-status="' + esc(c.id) + '"></span></div>';
