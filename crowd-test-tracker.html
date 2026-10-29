@@ -769,6 +769,9 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .btn.is-off input[disabled] { cursor: not-allowed; }
 .video-status { color: var(--muted); font-size: .75rem; }
 .video-err { color:#b45309; font-weight:600; }
+.testplan-upload { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .8rem; }
+.testplan-status { color: var(--muted); font-size: .75rem; }
+.testplan-err { color:#b45309; font-weight:600; }
 .jb-video-dl-status { font-size: .78rem; color: var(--muted); margin: -4px 0 8px; }
 .jb-video-dl-status > div { margin-top: 2px; }
 .csv-help { padding-left:18px; font-size:.88rem; line-height:1.5; }
@@ -1622,6 +1625,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       titleFields: DEFAULT_TITLE_FIELDS.slice(),
       jiraDefaults: emptyJiraDefaults(),
       chat: [],
+      testPlanFileUrl: '', testPlanFileName: '',
       transactions: []
     };
   }
@@ -1639,6 +1643,8 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       updatedAt: c.updatedAt || '',
       deleted: !!c.deleted,
       deletedAt: c.deletedAt || '',
+      testPlanFileUrl: c.testPlanFileUrl || '',
+      testPlanFileName: c.testPlanFileName || '',
       transactions: txs.map(function (t, i) { return normalizeTx(t, 'tx-' + (i + 1)); })
     };
   }
@@ -2699,6 +2705,63 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     if (!m) return;
     supabaseClient.storage.from('tx-videos').remove([decodeURIComponent(m[1])]).catch(function (err) {
       try { console.error('removeUploadedVideo', err); } catch (e) {}
+    });
+  }
+
+  /* ---------- Upload test plan (Supabase Storage, bucket "cycle-testplans") ----------
+   *  Per-cycle Excel file with the test plan we expect testers to cover — same upload/remove
+   *  shape as uploadedVideoHtml/uploadVideoFile/removeUploadedVideo above, just scoped to a
+   *  cycle instead of a transaction and gated on videoResolverReady() (really just "is Storage
+   *  usable right now", not video-specific — reused as-is rather than duplicating the check). */
+  function uploadedTestPlanHtml(c) {
+    if (!c.testPlanFileUrl) {
+      return '<div class="testplan-upload" data-testplan-upload="' + esc(c.id) + '">' +
+        '<label class="btn btn-sm' + (videoResolverReady() ? '' : ' is-off') + '">📋 Upload test plan (Excel)' +
+        '<input type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" data-testplan-upload-input="' + esc(c.id) + '" style="display:none" ' + (videoResolverReady() ? '' : 'disabled') + ' /></label> ' +
+        '<span class="testplan-status" data-testplan-upload-status="' + esc(c.id) + '">' +
+        (videoResolverReady() ? '' : 'Needs <strong>Live sync</strong> connected — the file is shared via Supabase Storage.') +
+        '</span></div>';
+    }
+    return '<div class="testplan-upload" data-testplan-upload="' + esc(c.id) + '">' +
+      '<span class="testplan-name">📋 ' + esc(c.testPlanFileName || 'test plan') + '</span> ' +
+      '<a class="btn btn-sm" href="' + esc(c.testPlanFileUrl) + '" target="_blank" rel="noopener">Open</a>' +
+      '<button type="button" class="btn btn-sm btn-danger" data-action="testplan-upload-remove" data-id="' + esc(c.id) + '">Remove</button>' +
+      '<span class="testplan-status" data-testplan-upload-status="' + esc(c.id) + '"></span></div>';
+  }
+
+  function uploadTestPlanFile(c, file, statusEl) {
+    function setS(html) { if (statusEl) statusEl.innerHTML = html; }
+    if (!videoResolverReady()) { setS('<span class="testplan-err">Connect Live sync first — the file needs Supabase Storage to be shared.</span>'); return; }
+    var path = c.id + '/' + Date.now() + '-' + sanitizeStorageName(file.name);
+    setS('Uploading… ' + (file.size / 1048576).toFixed(1) + ' MB');
+    supabaseClient.storage.from('cycle-testplans').upload(path, file, { upsert: true, contentType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      .then(function (res) {
+        if (res.error) throw res.error;
+        var pub = supabaseClient.storage.from('cycle-testplans').getPublicUrl(path);
+        var url = pub && pub.data && pub.data.publicUrl;
+        if (!url) throw new Error('No public URL returned');
+        c.testPlanFileUrl = url;
+        c.testPlanFileName = file.name;
+        persist();
+        renderCyclesList();
+      })
+      .catch(function (err) {
+        var msg = (err && (err.message || err.error_description)) || String(err);
+        if (/not found|bucket/i.test(msg)) msg += ' — run sql/supabase-testplan-upload.sql in Supabase first.';
+        setS('<span class="testplan-err">Upload failed: ' + esc(msg) + '</span>');
+      });
+  }
+
+  function removeUploadedTestPlan(c, statusEl) {
+    function setS(html) { if (statusEl) statusEl.innerHTML = html; }
+    var url = c.testPlanFileUrl;
+    c.testPlanFileUrl = ''; c.testPlanFileName = '';
+    persist(); renderCyclesList();
+    if (!url || !videoResolverReady()) return;
+    var m = url.match(/\/cycle-testplans\/(.+)$/);
+    if (!m) return;
+    supabaseClient.storage.from('cycle-testplans').remove([decodeURIComponent(m[1])]).catch(function (err) {
+      try { console.error('removeUploadedTestPlan', err); } catch (e) {}
     });
   }
 
@@ -5350,6 +5413,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         (brief
           ? '<div class="cycle-brief-label">Cycle brief / notes</div><div class="cycle-notes" title="Scroll to see the full brief">' + esc(brief) + '</div>'
           : '<div class="cycle-brief-label">Cycle brief / notes</div><div class="cycle-notes" style="color:var(--muted)">No brief yet — Edit cycle or open it to add the Applause ask.</div>') +
+        uploadedTestPlanHtml(c) +
         '<details class="cycle-card-chat" data-chat-details="' + esc(c.id) + '"' + (chatOpen ? ' open' : '') + '>' +
         '<summary>📨 Applause Communication' + (waiting ? ' <span class="badge badge-chat-wait has-count">' + waiting + '</span>' : '') + '</summary>' +
         cycleChatBlockHtml(c) +
@@ -6186,6 +6250,16 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     // Let the user read/select text in the brief preview without the card hijacking the click
     // into "open this cycle" — Edit was the only way in otherwise.
     if (e.target.closest('.cycle-notes')) return;
+    var tpRemove = e.target.closest('[data-action="testplan-upload-remove"]');
+    if (tpRemove) {
+      e.preventDefault(); e.stopPropagation();
+      var tpc = (state.cycles || []).find(function (x) { return x.id === tpRemove.getAttribute('data-id'); });
+      if (tpc) removeUploadedTestPlan(tpc, document.querySelector('[data-testplan-upload-status="' + tpc.id + '"]'));
+      return;
+    }
+    // Same reasoning as .cycle-notes above — the upload label/input and the "Open" link both
+    // need their native click behavior (open file picker / open in new tab), not "open the cycle".
+    if (e.target.closest('.testplan-upload')) return;
     var del = e.target.closest('[data-del-cycle]');
     if (del) { e.preventDefault(); e.stopPropagation(); deleteCycle(del.getAttribute('data-del-cycle')); return; }
     var bt = e.target.closest('[data-bug-template]');
@@ -6195,6 +6269,15 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var open = e.target.closest('[data-open-cycle]');
     if (open) openCycle(open.getAttribute('data-open-cycle'));
   };
+  document.getElementById('cyclesList').addEventListener('change', function (e) {
+    var input = e.target.closest && e.target.closest('[data-testplan-upload-input]');
+    if (!input || !input.files || !input.files[0]) return;
+    var cycleId = input.getAttribute('data-testplan-upload-input');
+    var cyc = (state.cycles || []).find(function (x) { return x.id === cycleId; });
+    if (!cyc) return;
+    var statusEl = document.querySelector('[data-testplan-upload-status="' + cycleId + '"]');
+    uploadTestPlanFile(cyc, input.files[0], statusEl);
+  });
   document.getElementById('cyclesList').addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey && e.target.matches('textarea[data-cycle-input]')) {
       e.preventDefault();
