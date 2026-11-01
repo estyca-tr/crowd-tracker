@@ -1277,9 +1277,9 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   function knownPeopleNames() {
     var names = {};
     (state.cycles || []).forEach(function (c) {
-      normalizeChatList(c.chat).forEach(function (m) { if (m && m.from) names[m.from] = true; });
+      liveMsgsOf(c.chat).forEach(function (m) { if (m && m.from) names[m.from] = true; });
       liveTxsOf(c).forEach(function (t) {
-        normalizeChatList(t.chat).forEach(function (m) { if (m && m.from) names[m.from] = true; });
+        liveMsgsOf(t.chat).forEach(function (m) { if (m && m.from) names[m.from] = true; });
       });
     });
     return Object.keys(names);
@@ -1325,11 +1325,11 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var since = identity.lastSeenMentionsAt;
     var found = [];
     (state.cycles || []).forEach(function (c) {
-      normalizeChatList(c.chat).forEach(function (m) {
+      liveMsgsOf(c.chat).forEach(function (m) {
         if (m && m.from !== me && m.ts > since && textMentionsMe(m.message)) found.push(m);
       });
       liveTxsOf(c).forEach(function (t) {
-        normalizeChatList(t.chat).forEach(function (m) {
+        liveMsgsOf(t.chat).forEach(function (m) {
           if (m && m.from !== me && m.ts > since && textMentionsMe(m.message)) found.push(m);
         });
       });
@@ -1591,7 +1591,14 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         role: role,
         message: m.message != null ? String(m.message) : String(m.text || ''),
         replyToId: m.replyToId || '',
-        editedAt: m.editedAt || ''
+        editedAt: m.editedAt || '',
+        // A delete used to splice the message out of the array outright — invisible to the
+        // per-message merge, which just unions whichever ids either side still has. The result:
+        // delete it here, a sync pull from a side that hadn't seen the delete yet brings the old
+        // copy right back. Deleted is a tombstone like everywhere else now, so it has to survive
+        // this rebuild same as id/replyToId/editedAt above.
+        deleted: !!m.deleted,
+        deletedAt: m.deletedAt || ''
       };
     });
     out.triage = t.triage || 'Pending';
@@ -1843,6 +1850,10 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       if (Array.isArray(c.transactions)) {
         c.transactions = c.transactions.filter(function (t) { return !expired(t); });
       }
+      if (Array.isArray(c.chat)) c.chat = c.chat.filter(function (m) { return !expired(m); });
+      (c.transactions || []).forEach(function (t) {
+        if (Array.isArray(t.chat)) t.chat = t.chat.filter(function (m) { return !expired(m); });
+      });
     });
   }
   function liveTxsOf(c) {
@@ -2009,7 +2020,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   /** How many messages somebody else wrote since I last had this thread open. */
   function unreadChatCount(chat, key) {
     var me = displayLabel();
-    var list = normalizeChatList(chat);
+    var list = liveMsgsOf(chat);
     var since = (identity.lastReadChat || {})[key] || '';
     // My own latest message also counts as a read mark: anything I replied after, I had
     // obviously read. Without this, a fresh browser — or a re-downloaded copy of the file,
@@ -2319,7 +2330,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   function msgQuoteHtml(chat, replyToId) {
     if (!replyToId) return '';
     var orig = chat.find(function (m) { return m.id === replyToId; });
-    if (!orig) return '<div class="msg-quote msg-quote-missing">Original message was deleted</div>';
+    if (!orig || orig.deleted) return '<div class="msg-quote msg-quote-missing">Original message was deleted</div>';
     var who = orig.from || orig.role || '';
     var snippet = String(orig.message || '').slice(0, 80);
     if (String(orig.message || '').length > 80) snippet += '…';
@@ -2329,12 +2340,13 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
 
   function chatThreadHtml(t, ownerKey) {
     var chat = normalizeChatList(t.chat);
-    t.chat = chat;
-    if (!chat.length) {
+    t.chat = chat;   // canonical form (tombstones included) persists back onto the record
+    var liveChat = chat.filter(function (m) { return m && !m.deleted; });
+    if (!liveChat.length) {
       return '<div class="chat-empty">No messages yet — use this chat instead of Slack</div>';
     }
     var editingId = chatEditingId[ownerKey] || '';
-    return chat.map(function (m) {
+    return liveChat.map(function (m) {
       var roleForCls = m.role || guessRoleFromFrom(m.from);
       var cls = isEstySide(roleForCls) ? 'me' : (roleForCls === 'Tester' ? 'tester' : (roleForCls === 'Applause' ? 'applause' : 'other'));
       var role = m.role || guessRoleFromFrom(m.from);
@@ -2367,7 +2379,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var replyId = chatReplyTarget[ownerKey];
     if (!replyId) return '';
     var orig = chat.find(function (m) { return m.id === replyId; });
-    if (!orig) { delete chatReplyTarget[ownerKey]; return ''; }
+    if (!orig || orig.deleted) { delete chatReplyTarget[ownerKey]; return ''; }
     var snippet = String(orig.message || '').slice(0, 60);
     if (String(orig.message || '').length > 60) snippet += '…';
     return '<div class="reply-bar"><span>Replying to <strong>' + esc(orig.from || orig.role || '') + '</strong>: ' + esc(snippet) + '</span>' +
@@ -2380,7 +2392,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var ownerKey = 'tx:' + t.id;
     return '<div class="chat-under" data-chat-tx="' + esc(t.id) + '">' +
       '<div class="chat-under-head"><span class="chat-label">Chat</span><span class="chat-hint">for this transaction</span>' +
-      (chat.length ? '<button type="button" class="chat-jump" style="margin-left:auto" data-jump-thread="' + esc(t.id) + '">↓ Latest</button>' : '') +
+      (liveMsgsOf(chat).length ? '<button type="button" class="chat-jump" style="margin-left:auto" data-jump-thread="' + esc(t.id) + '">↓ Latest</button>' : '') +
       '</div>' +
       '<div class="chat-box">' +
       '<div class="chat-thread" data-thread="' + esc(t.id) + '">' + chatThreadHtml(t, ownerKey) + '</div>' +
@@ -3618,10 +3630,23 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
 
   /** Shared mutation helpers for chat messages — both the per-transaction and cycle-wide chats
    *  reuse these (looked up by the owner's own .chat array, so one implementation covers both). */
+  /** Live (non-deleted) messages only — every render/count/export site wants this. Raw arrays
+   *  (including tombstones) are still what persist() stores and what the sync merge compares, the
+   *  same split as liveTxsOf/liveCyclesOf vs the raw transactions/cycles arrays. */
+  function liveMsgsOf(chat) {
+    return normalizeChatList(chat).filter(function (m) { return m && !m.deleted; });
+  }
+
   function deleteChatMessage(chatArr, msgId) {
-    var idx = chatArr.findIndex(function (m) { return m.id === msgId; });
-    if (idx === -1) return false;
-    chatArr.splice(idx, 1);
+    var m = chatArr.find(function (x) { return x.id === msgId; });
+    if (!m) return false;
+    // Tombstone, not splice — a spliced message is invisible to the per-message merge (it just
+    // unions whichever ids either side still has), so a sync pull from a device that hadn't seen
+    // the delete yet would silently bring the old message right back. editedAt doubles as the
+    // tombstone's clock, matching how merge already decides "newer wins" for an edited message.
+    m.deleted = true;
+    m.deletedAt = new Date().toISOString();
+    m.editedAt = m.deletedAt;
     return true;
   }
   function updateChatMessage(chatArr, msgId, newText) {
@@ -3705,7 +3730,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var chat = normalizeChatList(c.chat);
     var ownerKey = 'cycle:' + c.id;
     return '<div class="chat-under compact" data-chat-cycle="' + esc(c.id) + '">' +
-      (chat.length ? '<div class="chat-under-head" style="justify-content:flex-end">' +
+      (liveMsgsOf(chat).length ? '<div class="chat-under-head" style="justify-content:flex-end">' +
         // This card opens itself when something is unread and deliberately does NOT auto-mark
         // (that would clear the badge before it's seen), so it needs an explicit way out.
         (unreadChatCount(chat, ownerKey) ? '<button type="button" class="chat-jump" data-markread-cycle="' + esc(c.id) + '" title="Stop showing this as waiting, without replying">✓ Mark read</button>' : '') +
@@ -6041,10 +6066,10 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   function contentRichness(cycles) {
     var transactions = 0, messages = 0;
     liveCyclesOf(cycles).forEach(function (c) {
-      messages += normalizeChatList(c.chat).length;
+      messages += liveMsgsOf(c.chat).length;
       liveTxsOf(c).forEach(function (t) {
         transactions++;
-        messages += normalizeChatList(t.chat).length;
+        messages += liveMsgsOf(t.chat).length;
       });
     });
     return { transactions: transactions, messages: messages };
@@ -6623,7 +6648,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   }
 
   function chatLastMessage(t) {
-    var chat = normalizeChatList(t.chat);
+    var chat = liveMsgsOf(t.chat);
     if (!chat.length) return '';
     var last = chat[chat.length - 1];
     var who = last.from || last.role || '';
