@@ -5740,6 +5740,11 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var prev = selectedId;
     openAcc = {};
     selectedId = id;
+    // Land straight on the waiting chat instead of making you open the accordion yourself —
+    // renderAll() already marks an open Chat section read, so this also clears the badge as
+    // part of the same render, exactly as if you'd clicked it open by hand.
+    var t = getTx(id);
+    if (t && chatWaitingInfo(t).needed) openAcc['Chat'] = true;
     if (prev) discardDraftIfNeeded(prev);
     renderAll();
   }
