@@ -781,6 +781,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .btn-testplan { background: #059669; color: #fff; border-color: #047857; }
 .btn-testplan:hover { background: #047857; }
 .btn-testplan.is-off { background: var(--surface); color: var(--text); border-color: var(--border); }
+.btn-cycle-email { background: var(--info); color: #fff; border-color: #0369a1; }
+.btn-cycle-email:hover { background: #0369a1; }
 .jb-video-dl-status { font-size: .78rem; color: var(--muted); margin: -4px 0 8px; }
 .jb-video-dl-status > div { margin-top: 2px; }
 .csv-help { padding-left:18px; font-size:.88rem; line-height:1.5; }
@@ -1022,6 +1024,24 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     </div>
       <div class="row-btns" style="margin-top:10px">
         <button type="button" class="btn btn-primary" id="btnBugTemplateDone">Done (auto-saved)</button>
+      </div>
+    </div>
+  </div>
+  <div id="cycleEmailModal" class="modal-backdrop view-hidden" role="dialog" aria-modal="true" aria-labelledby="cycleEmailTitle">
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <h3 id="cycleEmailTitle">✉️ Cycle kickoff email to Applause</h3>
+        <button type="button" class="close" id="btnCycleEmailClose" title="Close (Esc)" aria-label="Close">×</button>
+      </div>
+      <p class="cycle-brief-hint" style="margin-top:0">Drafts a kickoff request with this cycle's technical details. Nothing is sent from here — it opens your own email app with everything pre-filled, so you review and hit send yourself.</p>
+      <div class="field"><label for="ceTo">To</label><input id="ceTo" type="text" /></div>
+      <div class="field"><label for="ceSubject">Subject</label><input id="ceSubject" type="text" /></div>
+      <div class="field"><label for="ceBody">Body</label><textarea id="ceBody" rows="12"></textarea></div>
+      <div class="cycle-brief-hint" id="ceLenWarn" style="display:none;color:#b45309;font-weight:600">Some email apps truncate very long mailto links — if "Open in email app" opens with a cut-off body, use "Copy body" and paste it in manually instead.</div>
+      <div class="row-btns" style="margin-top:10px">
+        <a class="btn btn-primary" id="btnCeOpenMail" href="#">Open in email app</a>
+        <button type="button" class="btn btn-sm" id="btnCeCopyBody">Copy body</button>
+        <button type="button" class="btn" id="btnCeClose2">Close</button>
       </div>
     </div>
   </div>
@@ -5057,6 +5077,62 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     else if (selectedId && openAcc['Jira']) { try { renderPanel(); } catch (e) {} } // show/hide ⚡ button after webhook edits
   }
 
+  /* ---------- Cycle kickoff email (to Applause) ----------
+   *  No backend involved: this is a plain mailto: link pre-filled from the cycle's own brief —
+   *  it opens the person's own email app for them to review and send, never sends anything
+   *  itself (this file has no way to send mail on its own, and shouldn't pretend to). */
+  var CYCLE_EMAIL_DEFAULT_TO = 'ikapitonava@applausemail.com, nkislev@applause.com, rshaham@applause.com';
+
+  function cycleKickoffEmailDefaults(c) {
+    var subject = 'New Crowd Test Cycle: ' + (c.name || 'Untitled cycle');
+    var bodyLines = [
+      'Hi team,',
+      '',
+      'We\'d like to start a new crowd testing cycle with the following details:',
+      '',
+      'Cycle: ' + (c.name || ''),
+      'Created: ' + (formatDate(c.createdAt) || '')
+    ];
+    if ((c.notes || '').trim()) {
+      bodyLines.push('');
+      bodyLines.push(c.notes.trim());
+    }
+    bodyLines.push('');
+    bodyLines.push('Please confirm coverage and let us know if you need anything else from our side.');
+    bodyLines.push('');
+    bodyLines.push('Thanks,');
+    bodyLines.push(displayLabel() + (identity.role ? ' · ' + identity.role : ''));
+    return { to: CYCLE_EMAIL_DEFAULT_TO, subject: subject, body: bodyLines.join('\n') };
+  }
+
+  function refreshCycleEmailLink() {
+    var to = (document.getElementById('ceTo').value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean).join(',');
+    var subject = document.getElementById('ceSubject').value || '';
+    var body = document.getElementById('ceBody').value || '';
+    var href = 'mailto:' + encodeURIComponent(to).replace(/%2C/g, ',') +
+      '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+    document.getElementById('btnCeOpenMail').setAttribute('href', href);
+    // Most clients are fine well past this, but Outlook/some mobile mail apps have truncated
+    // mailto bodies around ~1900-2000 chars in practice — warn rather than silently clip.
+    document.getElementById('ceLenWarn').style.display = body.length > 1800 ? 'block' : 'none';
+  }
+
+  function openCycleEmailModal(cycleId) {
+    var c = (state.cycles || []).find(function (x) { return x.id === cycleId; });
+    if (!c) return;
+    var d = cycleKickoffEmailDefaults(c);
+    document.getElementById('ceTo').value = d.to;
+    document.getElementById('ceSubject').value = d.subject;
+    document.getElementById('ceBody').value = d.body;
+    refreshCycleEmailLink();
+    document.getElementById('cycleEmailModal').classList.remove('view-hidden');
+    setTimeout(function () { var f = document.getElementById('ceSubject'); if (f) f.focus(); }, 0);
+  }
+
+  function closeCycleEmailModal() {
+    document.getElementById('cycleEmailModal').classList.add('view-hidden');
+  }
+
   function sampleTxForPreview() {
     return {
       id: 'tx-sample', username: 'sample_user', paymentMethod: 'iDeal', actionTested: 'Deposit #1',
@@ -5387,6 +5463,23 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     document.getElementById('bugTemplateModal').addEventListener('mousedown', function (e) {
       if (e.target === e.currentTarget) { e.preventDefault(); closeBugTemplate(); }
     });
+    document.getElementById('btnCycleEmailClose').onclick = closeCycleEmailModal;
+    document.getElementById('btnCeClose2').onclick = closeCycleEmailModal;
+    document.getElementById('cycleEmailModal').addEventListener('mousedown', function (e) {
+      if (e.target === e.currentTarget) { e.preventDefault(); closeCycleEmailModal(); }
+    });
+    ['ceTo', 'ceSubject', 'ceBody'].forEach(function (id) {
+      document.getElementById(id).addEventListener('input', refreshCycleEmailLink);
+    });
+    document.getElementById('btnCeCopyBody').onclick = function () {
+      var body = document.getElementById('ceBody').value || '';
+      navigator.clipboard.writeText(body).then(function () {
+        var btn = document.getElementById('btnCeCopyBody');
+        var old = btn.textContent;
+        btn.textContent = 'Copied ✓';
+        setTimeout(function () { btn.textContent = old; }, 1500);
+      }).catch(function () {});
+    };
     // Never lose a pending template edit when the tab is hidden / closed / reloaded
     window.addEventListener('pagehide', flushJdSave);
     window.addEventListener('beforeunload', flushJdSave);
@@ -5457,6 +5550,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         '</div></div>' +
         '<div class="cycle-actions">' +
         '<button type="button" class="btn btn-sm btn-bug-template" data-bug-template="' + esc(c.id) + '" title="Jira fields for this cycle\'s bugs + live preview">🐞 Bug template</button>' +
+        '<button type="button" class="btn btn-sm btn-cycle-email" data-cycle-email="' + esc(c.id) + '" title="Draft a kickoff email to Applause with this cycle\'s details">✉️ Email Applause</button>' +
         '<button type="button" class="btn btn-sm" data-edit-cycle="' + esc(c.id) + '">Edit</button>' +
         '<button type="button" class="btn btn-sm btn-danger" data-del-cycle="' + esc(c.id) + '">Delete</button>' +
         '</div></div>' +
@@ -6336,6 +6430,8 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     if (del) { e.preventDefault(); e.stopPropagation(); deleteCycle(del.getAttribute('data-del-cycle')); return; }
     var bt = e.target.closest('[data-bug-template]');
     if (bt) { e.preventDefault(); e.stopPropagation(); openBugTemplate(bt.getAttribute('data-bug-template')); return; }
+    var em = e.target.closest('[data-cycle-email]');
+    if (em) { e.preventDefault(); e.stopPropagation(); openCycleEmailModal(em.getAttribute('data-cycle-email')); return; }
     var ed = e.target.closest('[data-edit-cycle]');
     if (ed) { e.preventDefault(); e.stopPropagation(); openCycleModal(ed.getAttribute('data-edit-cycle')); return; }
     var open = e.target.closest('[data-open-cycle]');
@@ -6614,6 +6710,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
       if (!document.getElementById('bugTemplateModal').classList.contains('view-hidden')) closeBugTemplate();
+      else if (!document.getElementById('cycleEmailModal').classList.contains('view-hidden')) closeCycleEmailModal();
       else if (!document.getElementById('cycleModal').classList.contains('view-hidden')) closeCycleModal();
       else if (!document.getElementById('historyModal').classList.contains('view-hidden')) closeHistoryModal();
       else closePanel();
