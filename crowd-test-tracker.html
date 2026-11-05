@@ -450,6 +450,10 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
 .cycle-card h3 { margin: 0; font-size: 1.05rem; font-weight: 750; overflow-wrap: anywhere; }
 .cycle-meta { color: var(--muted); font-size: .82rem; display: flex; flex-wrap: wrap; gap: 8px; }
 .planned-start-moved { color: #c2410c; font-weight: 600; }
+.planned-start-badge { font: inherit; color: var(--muted); background: none; border: none; padding: 0; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.planned-start-badge:hover { color: var(--text); }
+.planned-start-unset { color: var(--info); }
+.planned-start-preview { font-weight: 600; margin-top: 4px; min-height: 1.1em; }
 .cycle-notes {
   color: var(--text); font-size: .88rem; white-space: pre-wrap;
   background: #f8fafc; border: 1px solid var(--border); border-radius: 10px;
@@ -630,6 +634,8 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
 /* ---- Jira bug card: status first, one primary action, named groups ---- */
 .bug-card-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
 .jb-head-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.jb-team-badge { font-size: .75rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: #f1f5f9; color: var(--muted); border: 1px solid #e2e8f0; }
+.jb-team-badge-override { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
 
 .jb-status { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
   border-radius:10px; padding:8px 10px; margin:8px 0; font-size:.84rem; font-weight:600; }
@@ -1053,6 +1059,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       <div class="field">
         <label for="cyclePlannedStart">Planned start date (rough estimate)</label>
         <input id="cyclePlannedStart" type="date" />
+        <div class="planned-start-preview" id="cyclePlannedStartPreview"></div>
         <div class="cycle-brief-hint" id="cyclePlannedStartMovedHint" style="display:none"></div>
       </div>
       <details class="cycle-collapsible" id="modalBriefDetails">
@@ -2479,6 +2486,16 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         return '<option value="' + esc(ci.id) + '"' + (b.linkedIssueId === ci.id ? ' selected' : '') + '>' + esc(label.slice(0, 80)) + '</option>';
       }).join('');
     var kpB = resolveJiraIds(b).known;
+    var knownKeys = Object.keys(KNOWN_JIRA_PROJECTS);
+    var curProjectKey = String(b.projectKey || '').trim().toUpperCase();
+    var quickTeamHtml = knownKeys.length
+      ? '<div class="field full"><label>Different team for just this bug <span style="font-weight:500;color:var(--muted)">(quick pick — fills the project key below)</span></label>' +
+        '<select data-jb-quick-team="' + esc(b.id) + '">' +
+        '<option value="">— keep cycle default (' + esc(defaults.projectKey || '—') + ') —</option>' +
+        knownKeys.map(function (k) { return '<option value="' + k + '"' + (curProjectKey === k ? ' selected' : '') + '>' + k + ' — ' + esc(KNOWN_JIRA_PROJECTS[k].name) + '</option>'; }).join('') +
+        '<option value="__custom__"' + (curProjectKey && knownKeys.indexOf(curProjectKey) === -1 ? ' selected' : '') + '>Other project — type it in below…</option>' +
+        '</select></div>'
+      : '';
     var fields = JIRA_DEFAULT_FIELDS.filter(function (f) { return !f.noOverride; }).map(function (f) {
       var ph = 'Inherit: ' + (defaults[f.key] || '—');
       var cls = f.full ? 'field full' : 'field';
@@ -2519,6 +2536,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     return '<div class="jira-override-box">' +
       '<div class="ovr-label">Jira field overrides (empty = cycle bug template)</div>' +
       '<div class="field full"><label>Linked crowd issue</label><select data-jb-field="linkedIssueId" data-jb-id="' + esc(b.id) + '">' + issueOpts + '</select></div>' +
+      quickTeamHtml +
       '<div class="jira-defaults-grid">' + fields + '</div>' +
       reqHtml +
       '<div class="jira-resolved-hint">' + esc(resolvedHintText(b)) + '</div>' +
@@ -2886,9 +2904,17 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var list = t.jiraBugs || [];
     var autoOn = relayReady();
     var cycle = activeCycle();
+    var cycleDefaultKey = String(normalizeJiraDefaults(cycle && cycle.jiraDefaults).projectKey || '').trim().toUpperCase();
 
     var cards = list.length ? list.map(function (b, idx) {
       var bid = esc(b.id);
+      var resolvedKey = resolveJiraIds(b, cycle).projectKey;
+      var bugOverridesTeam = !!String(b.projectKey || '').trim() && String(b.projectKey).trim().toUpperCase() !== cycleDefaultKey;
+      var teamBadge = resolvedKey
+        ? '<span class="jb-team-badge' + (bugOverridesTeam ? ' jb-team-badge-override' : '') + '" title="' +
+          (bugOverridesTeam ? 'This bug goes to a different team/project than the cycle default (' + esc(cycleDefaultKey || '—') + '). Change under More options → Jira field overrides.' : 'Cycle default team/project — override it per bug under More options → Jira field overrides.') +
+          '">' + (bugOverridesTeam ? '🔀 ' : '') + esc(resolvedKey) + '</span>'
+        : '';
 
       // The ONE thing to do: open Jira with everything filled in. Reviewing happens in Jira
       // itself (its own form, its own Create button) — not in a second copy built here.
@@ -2933,7 +2959,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
 
       return '<div class="bug-card' + (b.approved ? ' approved' : '') + '" data-jb="' + bid + '">' +
         '<div class="bug-card-head">' +
-        '<strong>Jira bug ' + (idx + 1) + '</strong>' +
+        '<strong>Jira bug ' + (idx + 1) + '</strong>' + teamBadge +
         '<span class="jb-head-right">' +
         '<span class="approve-toggle-wrap' + (b.approved ? ' on' : '') + '" title="' + (b.approved ? 'Approved' + (b.approvedAt ? ' · ' + esc(formatWhen(b.approvedAt)) : '') : 'Toggle ON when this bug is accepted') + '">' +
         '<span class="approve-label">' + (b.approved ? 'Approved' : 'Approve') + '</span>' +
@@ -3222,6 +3248,20 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       };
       el.onchange = save;
       el.onblur = save;
+    });
+
+    // Quick pick: switch just this bug to a different team/project's known template (PINT, PAYUA…)
+    // instead of retyping project key / team by hand. "" clears the override back to cycle default.
+    Array.prototype.forEach.call(panel.querySelectorAll('[data-jb-quick-team]'), function (el) {
+      el.onchange = function () {
+        var id = el.getAttribute('data-jb-quick-team');
+        var b = (t.jiraBugs || []).find(function (x) { return x.id === id; });
+        if (!b || el.value === '__custom__') return;
+        b.projectKey = el.value;
+        persist();
+        jbOpenSec[id + '|more'] = true;
+        renderPanel();
+      };
     });
 
     Array.prototype.forEach.call(panel.querySelectorAll('[data-jb-req], [data-jb-req-multi]'), function (el) {
@@ -4928,6 +4968,26 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     }).join('\n');
   }
 
+  // Whole calendar days from today to a plain "YYYY-MM-DD" date — both at local midnight, so
+  // "today"/"tomorrow" read right regardless of what time of day it is right now.
+  function daysUntilPlainDate(dateStr) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+    if (!m) return null;
+    var target = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    return Math.round((target - today) / 86400000);
+  }
+
+  function plannedStartDaysText(dateStr) {
+    var n = daysUntilPlainDate(dateStr);
+    if (n === null) return '';
+    if (n === 0) return 'starts today';
+    if (n === 1) return '1 day to go';
+    if (n > 1) return n + ' days to go';
+    if (n === -1) return 'started 1 day ago';
+    return 'started ' + (-n) + ' days ago';
+  }
+
   function showCyclesLanding() {
     var closingId = selectedId;
     var cycleId = activeCycleId;
@@ -5576,9 +5636,11 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         '<div class="cycle-meta"><span>' + n + ' transaction' + (n === 1 ? '' : 's') + '</span>' +
         '<span>Created ' + esc(formatDate(c.createdAt)) + '</span>' +
         (c.plannedStartDate
-          ? '<span title="' + esc(plannedStartHistoryText(c) ? 'Moved before:\n' + plannedStartHistoryText(c) : 'Rough estimate — may still move') + '">📅 Planned start: ' + esc(formatPlainDate(c.plannedStartDate)) +
-            (c.plannedStartHistory && c.plannedStartHistory.length ? ' <span class="planned-start-moved">(moved)</span>' : '') + '</span>'
-          : '') +
+          ? '<button type="button" class="planned-start-badge" data-edit-cycle="' + esc(c.id) + '" title="' +
+            esc((plannedStartHistoryText(c) ? 'Moved before:\n' + plannedStartHistoryText(c) + '\n\n' : '') + 'Click to change this date') + '">📅 Planned start: ' +
+            esc(formatPlainDate(c.plannedStartDate)) + ' (' + esc(plannedStartDaysText(c.plannedStartDate)) + ')' +
+            (c.plannedStartHistory && c.plannedStartHistory.length ? ' <span class="planned-start-moved">· moved</span>' : '') + '</button>'
+          : '<button type="button" class="planned-start-badge planned-start-unset" data-edit-cycle="' + esc(c.id) + '" title="Click to set a rough estimate">📅 Set planned start date</button>') +
         (txWaiting ? '<button type="button" class="badge badge-chat-wait has-count" data-open-cycle-filter="' + esc(c.id) + '" title="Open this cycle filtered to the waiting transactions">💬 ' + txWaiting + ' transaction' + (txWaiting === 1 ? '' : 's') + ' waiting</button>' : '') +
         '</div></div>' +
         '<div class="cycle-actions">' +
@@ -5658,6 +5720,15 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     flashSaved('Restored ✓');
   }
 
+  // Live "Nov 15, 2026 — 12 days to go" line under the date picker, so the picked date reads
+  // clearly right away instead of just showing the raw <input type="date"> value.
+  function refreshPlannedStartPreview() {
+    var preview = document.getElementById('cyclePlannedStartPreview');
+    if (!preview) return;
+    var v = document.getElementById('cyclePlannedStart').value;
+    preview.textContent = v ? (formatPlainDate(v) + ' — ' + plannedStartDaysText(v)) : '';
+  }
+
   function openCycleModal(editId) {
     cycleModalEditId = editId || null;
     var modal = document.getElementById('cycleModal');
@@ -5666,6 +5737,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     document.getElementById('cycleName').value = c ? c.name : '';
     document.getElementById('cycleNotes').value = c ? (c.notes || '') : '';
     document.getElementById('cyclePlannedStart').value = c ? (c.plannedStartDate || '') : '';
+    refreshPlannedStartPreview();
     var movedHint = document.getElementById('cyclePlannedStartMovedHint');
     var histText = c ? plannedStartHistoryText(c) : '';
     if (histText) {
@@ -5700,6 +5772,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       return;
     }
     if (!state.cycles) state.cycles = [];
+    var plannedStartMovedMsg = '';
     if (cycleModalEditId) {
       var c = state.cycles.find(function (x) { return x.id === cycleModalEditId; });
       if (c) {
@@ -5711,6 +5784,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         if (c.plannedStartDate && plannedStart !== c.plannedStartDate) {
           if (!Array.isArray(c.plannedStartHistory)) c.plannedStartHistory = [];
           c.plannedStartHistory.push({ from: c.plannedStartDate, to: plannedStart, changedAt: new Date().toISOString() });
+          plannedStartMovedMsg = 'Planned start moved: ' + (formatPlainDate(c.plannedStartDate) || '(none)') + ' → ' + (formatPlainDate(plannedStart) || '(none)');
         }
         c.plannedStartDate = plannedStart;
         // This modal can be opened from the cycles landing page (no activeCycleId), which
@@ -5728,6 +5802,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     closeCycleModal();
     persist();
     renderCyclesList();
+    if (plannedStartMovedMsg) flashSaved(plannedStartMovedMsg);
     if (activeCycleId) {
       var cur = activeCycle();
       if (cur) {
@@ -6388,6 +6463,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   document.getElementById('btnAddCycle').onclick = function () { openCycleModal(null); };
   document.getElementById('cycleModalCancel').onclick = closeCycleModal;
   document.getElementById('cycleModalSave').onclick = saveCycleModal;
+  document.getElementById('cyclePlannedStart').oninput = refreshPlannedStartPreview;
   document.getElementById('btnHistory').onclick = openHistoryModal;
   document.getElementById('btnHistoryClose').onclick = closeHistoryModal;
   document.getElementById('historyModal').addEventListener('click', function (e) {
