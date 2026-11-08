@@ -5225,6 +5225,9 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       'Cycle: ' + (c.name || ''),
       'Created: ' + (formatDate(c.createdAt) || '')
     ];
+    if ((c.plannedStartDate || '').trim()) {
+      bodyLines.push('Planned start: ' + formatPlainDate(c.plannedStartDate) + ' (' + plannedStartDaysText(c.plannedStartDate) + ')');
+    }
     if ((c.notes || '').trim()) {
       bodyLines.push('');
       bodyLines.push(c.notes.trim());
