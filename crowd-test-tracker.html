@@ -2848,6 +2848,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
      One primary action per state, status first, everything else behind clearly
      named collapsible groups (no nested "Advanced", no duplicated buttons). */
   var jbOpenSec = {};                      // "<bugId>|<section>" -> open, kept across re-renders
+  var jbTxCustomTeam = {};                 // txId -> true while the "Other team" free-text box is shown pre-create
   function secOpen(bugId, key, dflt) {
     var k = bugId + '|' + key;
     return (k in jbOpenSec) ? jbOpenSec[k] : !!dflt;
@@ -2986,13 +2987,17 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var pendingTeam = String(t.pendingBugTeam || '').trim().toUpperCase();
     var pendingBug = pendingTeam ? { projectKey: pendingTeam } : null;
     var knownKeysEmpty = Object.keys(KNOWN_JIRA_PROJECTS);
-    var emptyTeamPickHtml = knownKeysEmpty.length
-      ? '<div class="field full jb-empty-team-pick"><label>Team for this bug <span style="font-weight:500;color:var(--muted)">(pick before creating — defaults to the cycle template)</span></label>' +
-        '<select data-jb-tx-quick-team="' + esc(t.id) + '">' +
-        '<option value="">— cycle default (' + esc(cycleDefaultKey || '—') + ') —</option>' +
-        knownKeysEmpty.map(function (k) { return '<option value="' + k + '"' + (pendingTeam === k ? ' selected' : '') + '>' + k + ' — ' + esc(KNOWN_JIRA_PROJECTS[k].name) + '</option>'; }).join('') +
-        '</select></div>'
-      : '';
+    var pendingIsCustom = !!pendingTeam && knownKeysEmpty.indexOf(pendingTeam) === -1;
+    var showCustomTeamBox = pendingIsCustom || !!jbTxCustomTeam[t.id];
+    var emptyTeamPickHtml =
+      '<div class="field full jb-empty-team-pick"><label>Team for this bug <span style="font-weight:500;color:var(--muted)">(pick before creating — defaults to the cycle template)</span></label>' +
+      '<select data-jb-tx-quick-team="' + esc(t.id) + '">' +
+      '<option value="">— cycle default (' + esc(cycleDefaultKey || '—') + ') —</option>' +
+      knownKeysEmpty.map(function (k) { return '<option value="' + k + '"' + (pendingTeam === k ? ' selected' : '') + '>' + k + ' — ' + esc(KNOWN_JIRA_PROJECTS[k].name) + '</option>'; }).join('') +
+      '<option value="__custom__"' + (showCustomTeamBox ? ' selected' : '') + '>Other team — type it in…</option>' +
+      '</select>' +
+      (showCustomTeamBox ? '<input type="text" class="jb-empty-team-custom" data-jb-tx-custom-team="' + esc(t.id) + '" value="' + esc(pendingTeam) + '" placeholder="Project key, e.g. TRADNA" style="margin-top:6px" />' : '') +
+      '</div>';
     var empty = list.length ? '' :
       '<div class="jb-empty">' +
       emptyTeamPickHtml +
@@ -3282,10 +3287,23 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     // "⚡ Create in Jira automatically" below).
     Array.prototype.forEach.call(panel.querySelectorAll('[data-jb-tx-quick-team]'), function (el) {
       el.onchange = function () {
-        t.pendingBugTeam = el.value === '__custom__' ? '' : el.value;
+        var id = el.getAttribute('data-jb-tx-quick-team');
+        if (el.value === '__custom__') {
+          // Just reveals the free-text box below; it writes pendingBugTeam itself, on its own input.
+          jbTxCustomTeam[id] = true;
+          renderPanel();
+          return;
+        }
+        jbTxCustomTeam[id] = false;
+        t.pendingBugTeam = el.value;
         persist();
         renderPanel();
       };
+    });
+    Array.prototype.forEach.call(panel.querySelectorAll('[data-jb-tx-custom-team]'), function (el) {
+      var save = function () { t.pendingBugTeam = el.value.trim(); persist(); };
+      el.onchange = function () { save(); renderPanel(); };
+      el.onblur = save;
     });
 
     Array.prototype.forEach.call(panel.querySelectorAll('[data-jb-req], [data-jb-req-multi]'), function (el) {
