@@ -1556,6 +1556,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       uploadedVideoUrl: '', uploadedVideoName: '',
       crowdIssues: [], jiraBugs: [],
       notes: '',
+      pendingBugTeam: '',
       triage: 'Pending', waitingOn: '', openQuestions: false,
       chat: [],
       extraFields: {},
@@ -2982,17 +2983,29 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
 
     var emptyHasVideo = txVideos(t).length > 0;
     var emptyAutoDownload = emptyHasVideo && videoResolverReady();
+    var pendingTeam = String(t.pendingBugTeam || '').trim().toUpperCase();
+    var pendingBug = pendingTeam ? { projectKey: pendingTeam } : null;
+    var knownKeysEmpty = Object.keys(KNOWN_JIRA_PROJECTS);
+    var emptyTeamPickHtml = knownKeysEmpty.length
+      ? '<div class="field full jb-empty-team-pick"><label>Team for this bug <span style="font-weight:500;color:var(--muted)">(pick before creating — defaults to the cycle template)</span></label>' +
+        '<select data-jb-tx-quick-team="' + esc(t.id) + '">' +
+        '<option value="">— cycle default (' + esc(cycleDefaultKey || '—') + ') —</option>' +
+        knownKeysEmpty.map(function (k) { return '<option value="' + k + '"' + (pendingTeam === k ? ' selected' : '') + '>' + k + ' — ' + esc(KNOWN_JIRA_PROJECTS[k].name) + '</option>'; }).join('') +
+        '</select></div>'
+      : '';
     var empty = list.length ? '' :
       '<div class="jb-empty">' +
-      '<a class="btn jb-primary" data-action="jira-open-simple" data-jb-autoadd href="' + esc(jiraPrimaryCreateHref(t, null, cycle)) + '" target="_blank" rel="noopener">Create bug in Jira ↗</a>' +
-      '<div class="jb-actions-hint">Opens a new Jira tab with the summary, description and fields filled in from the cycle’s 🐞 Bug template' +
+      emptyTeamPickHtml +
+      '<a class="btn jb-primary" data-action="jira-open-simple" data-jb-autoadd href="' + esc(jiraPrimaryCreateHref(t, pendingBug, cycle)) + '" target="_blank" rel="noopener">Create bug in Jira ↗</a>' +
+      '<div class="jb-actions-hint">Opens a new Jira tab with the summary, description and fields filled in from ' +
+      (pendingBug ? 'the <strong>' + esc(pendingTeam) + '</strong> template' : 'the cycle’s 🐞 Bug template') +
       (emptyAutoDownload ? ', and downloads the video' : '') + '. Review there, then click Jira’s own <strong>Create</strong>' +
       (emptyAutoDownload ? ' (attach the downloaded video file)' : (emptyHasVideo ? ' — this tx has a video; connect Live sync (⚙ Sync) to have it download automatically' : '')) + '.</div>' +
       jbSection('', 'more', 'Preview & other options',
-        reqWarnHtml(t, null) +
-        bugPreviewHtml(t, null) +
+        reqWarnHtml(t, pendingBug) +
+        bugPreviewHtml(t, pendingBug) +
         '<div class="row-btns" style="margin-top:8px">' +
-        '<a class="btn btn-sm" data-action="jira-open-simple" href="' + esc(jiraSimpleCreateHref(t, null) || JIRA_CREATE_URL) + '" target="_blank" rel="noopener">Open Jira (no prefill, most reliable)</a>' +
+        '<a class="btn btn-sm" data-action="jira-open-simple" href="' + esc(jiraSimpleCreateHref(t, pendingBug) || JIRA_CREATE_URL) + '" target="_blank" rel="noopener">Open Jira (no prefill, most reliable)</a>' +
         '</div>' +
         '<div class="jb-sec-divider"></div>' +
         '<div class="jb-sec-subtitle">Instant create, no Jira visit (advanced)</div>' +
@@ -3264,6 +3277,17 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       };
     });
 
+    // Same quick pick, but before any bug exists yet: remembered on the transaction and baked
+    // into the first bug's projectKey the moment it gets created (either "Create bug in Jira" or
+    // "⚡ Create in Jira automatically" below).
+    Array.prototype.forEach.call(panel.querySelectorAll('[data-jb-tx-quick-team]'), function (el) {
+      el.onchange = function () {
+        t.pendingBugTeam = el.value === '__custom__' ? '' : el.value;
+        persist();
+        renderPanel();
+      };
+    });
+
     Array.prototype.forEach.call(panel.querySelectorAll('[data-jb-req], [data-jb-req-multi]'), function (el) {
       el.onchange = function () {
         var b = (t.jiraBugs || []).find(function (x) { return x.id === el.getAttribute('data-jb-id'); });
@@ -3406,6 +3430,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       if (!bugAu) {
         if (!t.jiraBugs) t.jiraBugs = [];
         bugAu = emptyBug();
+        if (t.pendingBugTeam) { bugAu.projectKey = t.pendingBugTeam; t.pendingBugTeam = ''; }
         t.jiraBugs.push(bugAu);
         createdAu = true;
       }
@@ -6761,6 +6786,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     if (a.hasAttribute('data-jb-autoadd') && !bugId) {
       if (!t.jiraBugs) t.jiraBugs = [];
       bug = emptyBug();
+      if (t.pendingBugTeam) { bug.projectKey = t.pendingBugTeam; t.pendingBugTeam = ''; }
       t.jiraBugs.push(bug);
       bugId = bug.id;
       openAcc['Jira'] = true;
