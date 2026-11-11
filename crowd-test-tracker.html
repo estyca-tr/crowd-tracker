@@ -465,6 +465,10 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
 .cycle-status-select.status-done { color: var(--ok); background: var(--ok-bg); border-color: #a7f3d0; }
 .cycles-sort-label { font-size: .85rem; color: var(--muted); margin-left: auto; }
 .cycles-sort-select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); }
+.cycles-search-input {
+  font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); min-width: 220px; flex: 0 1 260px;
+}
 .cycle-notes {
   color: var(--text); font-size: .88rem; white-space: pre-wrap;
   background: #f8fafc; border: 1px solid var(--border); border-radius: 10px;
@@ -919,6 +923,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     </details>
     <div class="actions-bar">
       <button class="btn btn-primary btn-lg" id="btnAddCycle" type="button">+ Add cycle</button>
+      <input type="search" id="cyclesSearch" class="cycles-search-input" placeholder="Search by cycle name or status…" />
       <label class="cycles-sort-label" for="cyclesSortBy">Sort by</label>
       <select id="cyclesSortBy" class="cycles-sort-select">
         <option value="created-desc">Newest created</option>
@@ -5680,6 +5685,15 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     try { localStorage.setItem(CYCLES_SORT_KEY, v); } catch (e) {}
   }
   var cyclesSortBy = loadCyclesSortPref();
+  var cyclesSearchTerm = '';
+  function filterCyclesForDisplay(cycles) {
+    var q = cyclesSearchTerm.trim().toLowerCase();
+    if (!q) return cycles;
+    return cycles.filter(function (c) {
+      return String(c.name || '').toLowerCase().indexOf(q) !== -1 ||
+        String(c.status || '').toLowerCase().indexOf(q) !== -1;
+    });
+  }
   function sortCyclesForDisplay(cycles) {
     var sorted = cycles.slice();
     if (cyclesSortBy === 'name-asc') {
@@ -5695,15 +5709,20 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   function renderCyclesList() {
     renderMentionBadge();
     var el = document.getElementById('cyclesList');
-    var cycles = sortCyclesForDisplay(liveCyclesOf(state.cycles));
+    var allCycles = liveCyclesOf(state.cycles);
+    var cycles = sortCyclesForDisplay(filterCyclesForDisplay(allCycles));
     // Preserve an in-progress chat draft (and focus) across a re-render triggered by something
     // else — e.g. a live-sync pull landing while someone is mid-message on a different card.
     var focused = document.activeElement;
     var hadFocus = focused && focused.matches && focused.matches('textarea[data-cycle-input]');
     var draftCycleId = hadFocus ? focused.getAttribute('data-cycle-input') : '';
     var draftText = hadFocus ? focused.value : '';
-    if (!cycles.length) {
+    if (!allCycles.length) {
       el.innerHTML = '<div class="empty">No cycles yet — click “+ Add cycle”</div>';
+      return;
+    }
+    if (!cycles.length) {
+      el.innerHTML = '<div class="empty">No cycles match “' + esc(cyclesSearchTerm.trim()) + '” — try a different cycle name or status.</div>';
       return;
     }
     el.innerHTML = cycles.map(function (c) {
@@ -6561,6 +6580,10 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       renderCyclesList();
     };
   })();
+  document.getElementById('cyclesSearch').oninput = function (e) {
+    cyclesSearchTerm = e.target.value || '';
+    renderCyclesList();
+  };
   document.getElementById('cycleModalCancel').onclick = closeCycleModal;
   document.getElementById('cycleModalSave').onclick = saveCycleModal;
   document.getElementById('cyclePlannedStart').oninput = refreshPlannedStartPreview;
