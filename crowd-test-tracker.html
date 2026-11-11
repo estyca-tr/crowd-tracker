@@ -473,9 +473,10 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
 .cycles-sort-label { font-size: .85rem; color: var(--muted); margin-left: auto; }
 .cycles-sort-select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); }
 .cycles-search-input {
-  font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--surface); min-width: 220px; flex: 0 1 260px;
+  font: inherit; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface); outline: none; min-width: 220px; flex: 0 1 280px;
 }
+.cycles-search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .cycle-notes {
   color: var(--text); font-size: .88rem; white-space: pre-wrap;
   background: #f8fafc; border: 1px solid var(--border); border-radius: 10px;
