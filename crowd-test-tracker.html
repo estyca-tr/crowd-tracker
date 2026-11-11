@@ -454,6 +454,17 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
 .planned-start-badge:hover { color: var(--text); }
 .planned-start-unset { color: var(--info); }
 .planned-start-preview { font-weight: 600; margin-top: 4px; min-height: 1.1em; }
+.cycle-status-select {
+  font: inherit; font-size: .72rem; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
+  border: 1px solid transparent; border-radius: 999px; padding: 2px 10px 2px 8px; cursor: pointer;
+  vertical-align: middle; margin-left: 6px;
+}
+.cycle-status-select.status-new { color: var(--info); background: var(--info-bg); border-color: #bae6fd; }
+.cycle-status-select.status-progress { color: var(--warn); background: var(--warn-bg); border-color: #fde68a; }
+.cycle-status-select.status-hold { color: var(--pending); background: var(--pending-bg); border-color: var(--border); }
+.cycle-status-select.status-done { color: var(--ok); background: var(--ok-bg); border-color: #a7f3d0; }
+.cycles-sort-label { font-size: .85rem; color: var(--muted); margin-left: auto; }
+.cycles-sort-select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); }
 .cycle-notes {
   color: var(--text); font-size: .88rem; white-space: pre-wrap;
   background: #f8fafc; border: 1px solid var(--border); border-radius: 10px;
@@ -908,6 +919,12 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     </details>
     <div class="actions-bar">
       <button class="btn btn-primary btn-lg" id="btnAddCycle" type="button">+ Add cycle</button>
+      <label class="cycles-sort-label" for="cyclesSortBy">Sort by</label>
+      <select id="cyclesSortBy" class="cycles-sort-select">
+        <option value="created-desc">Newest created</option>
+        <option value="name-asc">Cycle name (A–Z)</option>
+        <option value="status">Status</option>
+      </select>
     </div>
     <div class="cycles-list" id="cyclesList"></div>
   </div>
@@ -1134,6 +1151,8 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     } catch (e) { return 'c_' + String(Date.now()); }
   })();
   var DEFAULT_ROLES = ['Esty team', 'Applause', 'Tester', 'Other'];
+  var CYCLE_STATUSES = ['New', 'In progress', 'On hold', 'Done'];
+  var CYCLE_STATUS_CLASS = { 'New': 'status-new', 'In progress': 'status-progress', 'On hold': 'status-hold', 'Done': 'status-done' };
   var DEFAULT_TITLE_FIELDS = ['username', 'paymentMethod', 'actionTested'];
   var KNOWN_TITLE_FIELDS = [
     { key: 'username', label: 'eToro Username', placeholder: 'Type username…', detailId: 'fUsername' },
@@ -1671,6 +1690,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       id: uid('cycle'),
       name: name || 'New cycle',
       notes: '',
+      status: 'New',
       createdAt: new Date().toISOString(),
       titleFields: DEFAULT_TITLE_FIELDS.slice(),
       jiraDefaults: emptyJiraDefaults(),
@@ -1687,6 +1707,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       id: c.id || uid('cycle'),
       name: c.name || ('Cycle ' + (idx + 1)),
       notes: c.notes || '',
+      status: CYCLE_STATUSES.indexOf(c.status) !== -1 ? c.status : 'New',
       createdAt: c.createdAt || new Date().toISOString(),
       titleFields: normalizeTitleFields(c.titleFields),
       jiraDefaults: normalizeJiraDefaults(c.jiraDefaults),
@@ -5651,10 +5672,30 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   }
 
   var cardChatOpen = {};   // cycleId -> user toggled this card's chat open/closed explicitly
+  var CYCLES_SORT_KEY = 'crowd-test-tracker-cycles-sort-v1';
+  function loadCyclesSortPref() {
+    try { var v = localStorage.getItem(CYCLES_SORT_KEY); return v || 'created-desc'; } catch (e) { return 'created-desc'; }
+  }
+  function saveCyclesSortPref(v) {
+    try { localStorage.setItem(CYCLES_SORT_KEY, v); } catch (e) {}
+  }
+  var cyclesSortBy = loadCyclesSortPref();
+  function sortCyclesForDisplay(cycles) {
+    var sorted = cycles.slice();
+    if (cyclesSortBy === 'name-asc') {
+      sorted.sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }); });
+    } else if (cyclesSortBy === 'status') {
+      var order = ['In progress', 'New', 'On hold', 'Done'];
+      sorted.sort(function (a, b) { return order.indexOf(a.status) - order.indexOf(b.status); });
+    } else {
+      sorted.sort(function (a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); });
+    }
+    return sorted;
+  }
   function renderCyclesList() {
     renderMentionBadge();
     var el = document.getElementById('cyclesList');
-    var cycles = liveCyclesOf(state.cycles);
+    var cycles = sortCyclesForDisplay(liveCyclesOf(state.cycles));
     // Preserve an in-progress chat draft (and focus) across a re-render triggered by something
     // else — e.g. a live-sync pull landing while someone is mid-message on a different card.
     var focused = document.activeElement;
@@ -5676,9 +5717,13 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       // Open by default when the other side is waiting on a reply, or once the user has
       // explicitly opened it this session — otherwise collapsed so a long cycle list stays short.
       var chatOpen = cardChatOpen[c.id] != null ? cardChatOpen[c.id] : !!waiting;
+      var statusCls = CYCLE_STATUS_CLASS[c.status] || CYCLE_STATUS_CLASS['New'];
+      var statusSelectHtml = '<select class="cycle-status-select ' + statusCls + '" data-cycle-status="' + esc(c.id) + '" title="Change this cycle\'s status">' +
+        CYCLE_STATUSES.map(function (s) { return '<option value="' + esc(s) + '"' + (c.status === s ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('') +
+        '</select>';
       return '<article class="cycle-card" data-open-cycle="' + esc(c.id) + '">' +
         '<div class="cycle-card-top">' +
-        '<div><h3>' + esc(c.name) + '</h3>' +
+        '<div><h3>' + esc(c.name) + ' ' + statusSelectHtml + '</h3>' +
         '<div class="cycle-meta"><span>' + n + ' transaction' + (n === 1 ? '' : 's') + '</span>' +
         '<span>Created ' + esc(formatDate(c.createdAt)) + '</span>' +
         (c.plannedStartDate
@@ -6507,6 +6552,15 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   };
 
   document.getElementById('btnAddCycle').onclick = function () { openCycleModal(null); };
+  (function () {
+    var sortSel = document.getElementById('cyclesSortBy');
+    sortSel.value = cyclesSortBy;
+    sortSel.onchange = function () {
+      cyclesSortBy = sortSel.value;
+      saveCyclesSortPref(cyclesSortBy);
+      renderCyclesList();
+    };
+  })();
   document.getElementById('cycleModalCancel').onclick = closeCycleModal;
   document.getElementById('cycleModalSave').onclick = saveCycleModal;
   document.getElementById('cyclePlannedStart').oninput = refreshPlannedStartPreview;
@@ -6597,6 +6651,8 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     // Let the user read/select text in the brief preview without the card hijacking the click
     // into "open this cycle" — Edit was the only way in otherwise.
     if (e.target.closest('.cycle-notes')) return;
+    // Same for the status dropdown — picking a status shouldn't also navigate into the cycle.
+    if (e.target.closest('.cycle-status-select')) { e.stopPropagation(); return; }
     var tpRemove = e.target.closest('[data-action="testplan-upload-remove"]');
     if (tpRemove) {
       e.preventDefault(); e.stopPropagation();
@@ -6621,6 +6677,17 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     if (open) openCycle(open.getAttribute('data-open-cycle'));
   };
   document.getElementById('cyclesList').addEventListener('change', function (e) {
+    var statusSel = e.target.closest && e.target.closest('[data-cycle-status]');
+    if (statusSel) {
+      var sc = (state.cycles || []).find(function (x) { return x.id === statusSel.getAttribute('data-cycle-status'); });
+      if (sc && CYCLE_STATUSES.indexOf(statusSel.value) !== -1) {
+        sc.status = statusSel.value;
+        sc.updatedAt = new Date().toISOString();
+        persist();
+        renderCyclesList();
+      }
+      return;
+    }
     var input = e.target.closest && e.target.closest('[data-testplan-upload-input]');
     if (!input || !input.files || !input.files[0]) return;
     var cycleId = input.getAttribute('data-testplan-upload-input');
