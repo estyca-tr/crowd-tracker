@@ -496,6 +496,21 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
   font-size: .72rem; font-weight: 800; color: var(--muted);
   text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px;
 }
+.cycle-brief-details { margin: 2px 0; }
+.cycle-brief-details > summary {
+  cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 8px;
+  padding: 2px 0;
+}
+.cycle-brief-details > summary::-webkit-details-marker { display: none; }
+.cycle-brief-details > summary::before { content: '▸'; font-size: .7rem; color: var(--muted); transition: transform .12s; flex: 0 0 auto; }
+.cycle-brief-details[open] > summary::before { transform: rotate(90deg); }
+.cycle-brief-details > summary .cycle-brief-label { margin-bottom: 0; flex: 0 0 auto; }
+.cycle-brief-snippet {
+  color: var(--muted); font-size: .82rem; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; flex: 1 1 auto; min-width: 0;
+}
+.cycle-brief-details[open] > summary .cycle-brief-snippet { display: none; }
+.cycle-brief-details .cycle-notes { margin-top: 6px; }
 .cycle-brief-hint { font-size: .75rem; color: var(--muted); margin-top: 6px; }
 .cycle-collapsible {
   margin: 10px 0 14px;
@@ -5685,6 +5700,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   }
 
   var cardChatOpen = {};   // cycleId -> user toggled this card's chat open/closed explicitly
+  var cardBriefOpen = {};  // cycleId -> user explicitly expanded the brief/notes (collapsed by default)
   var CYCLES_SORT_KEY = 'crowd-test-tracker-cycles-sort-v1';
   function loadCyclesSortPref() {
     try { var v = localStorage.getItem(CYCLES_SORT_KEY); return v || 'created-desc'; } catch (e) { return 'created-desc'; }
@@ -5801,9 +5817,18 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         '<button type="button" class="btn btn-sm" data-edit-cycle="' + esc(c.id) + '">Edit</button>' +
         '<button type="button" class="btn btn-sm btn-danger" data-del-cycle="' + esc(c.id) + '">Delete</button>' +
         '</div></div>' +
-        (brief
-          ? '<div class="cycle-brief-label">Cycle brief / notes</div><div class="cycle-notes" title="Scroll to see the full brief">' + esc(brief) + '</div>'
-          : '<div class="cycle-brief-label">Cycle brief / notes</div><div class="cycle-notes" style="color:var(--muted)">No brief yet — Edit cycle or open it to add the Applause ask.</div>') +
+        (function () {
+          var snippet = brief ? brief.split('\n')[0].slice(0, 90) : '';
+          if (brief && brief.length > snippet.length) snippet += '…';
+          return '<details class="cycle-brief-details" data-brief-details="' + esc(c.id) + '"' + (cardBriefOpen[c.id] ? ' open' : '') + '>' +
+            '<summary><span class="cycle-brief-label">Cycle brief / notes</span>' +
+            '<span class="cycle-brief-snippet">' + (snippet ? esc(snippet) : 'No brief yet') + '</span>' +
+            '</summary>' +
+            (brief
+              ? '<div class="cycle-notes" title="Scroll to see the full brief">' + esc(brief) + '</div>'
+              : '<div class="cycle-notes" style="color:var(--muted)">No brief yet — Edit cycle or open it to add the Applause ask.</div>') +
+            '</details>';
+        })() +
         uploadedTestPlanHtml(c) +
         '<details class="cycle-card-chat" data-chat-details="' + esc(c.id) + '"' + (chatOpen ? ' open' : '') + '>' +
         '<summary>📨 Applause Communication' + (waiting ? ' <span class="badge badge-chat-wait has-count">' + waiting + '</span>' : '') + '</summary>' +
@@ -6720,9 +6745,17 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       }
       return;
     }
-    // Let the user read/select text in the brief preview without the card hijacking the click
-    // into "open this cycle" — Edit was the only way in otherwise.
-    if (e.target.closest('.cycle-notes')) return;
+    // The brief/notes is collapsed by default (<details>) — let its own toggle run (and
+    // remember the user's explicit choice across re-renders) instead of navigating into the
+    // cycle, and let text inside it be read/selected once expanded.
+    var briefHit = e.target.closest('[data-brief-details]');
+    if (briefHit) {
+      if (e.target.tagName === 'SUMMARY' || e.target.closest('summary')) {
+        var briefCycleId = briefHit.getAttribute('data-brief-details');
+        setTimeout(function () { cardBriefOpen[briefCycleId] = briefHit.open; }, 0);
+      }
+      return;
+    }
     // Same for the status dropdown — picking a status shouldn't also navigate into the cycle.
     if (e.target.closest('.cycle-status-select')) { e.stopPropagation(); return; }
     var tpRemove = e.target.closest('[data-action="testplan-upload-remove"]');
