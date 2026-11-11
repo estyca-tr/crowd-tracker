@@ -928,6 +928,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         <p>Then Project Settings → API → copy <strong>Project URL</strong> and <strong>anon public</strong> key into Live sync settings. Share HTML + same keys/doc id/access code with Applause.</p>
       </div>
     </details>
+    <div class="summary" id="cyclesStatusSummary"></div>
     <div class="actions-bar">
       <button class="btn btn-primary btn-lg" id="btnAddCycle" type="button">+ Add cycle</button>
       <input type="search" id="cyclesSearch" class="cycles-search-input" placeholder="Search by cycle name or status…" />
@@ -5693,13 +5694,41 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   }
   var cyclesSortBy = loadCyclesSortPref();
   var cyclesSearchTerm = '';
+  var cyclesStatusFilter = ''; // '' = all; set by clicking a status stat tile
+  var CYCLE_STATUS_TONE = { 'New': 'info', 'In progress': 'warn', 'On hold': '', 'Done': 'ok' };
   function filterCyclesForDisplay(cycles) {
     var q = cyclesSearchTerm.trim().toLowerCase();
-    if (!q) return cycles;
-    return cycles.filter(function (c) {
-      return String(c.name || '').toLowerCase().indexOf(q) !== -1 ||
-        String(c.status || '').toLowerCase().indexOf(q) !== -1;
-    });
+    var out = cycles;
+    if (cyclesStatusFilter) {
+      out = out.filter(function (c) { return (c.status || 'New') === cyclesStatusFilter; });
+    }
+    if (q) {
+      out = out.filter(function (c) {
+        return String(c.name || '').toLowerCase().indexOf(q) !== -1 ||
+          String(c.status || '').toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    return out;
+  }
+  /** Stat tiles — same look as the per-cycle transaction tiles — showing how many cycles are in
+   *  each status. Click one to filter the list to just that status; click again to clear it. */
+  function renderCyclesStatusSummary() {
+    var el = document.getElementById('cyclesStatusSummary');
+    if (!el) return;
+    var cycles = liveCyclesOf(state.cycles);
+    var counts = {};
+    CYCLE_STATUSES.forEach(function (s) { counts[s] = 0; });
+    cycles.forEach(function (c) { var s = CYCLE_STATUSES.indexOf(c.status) !== -1 ? c.status : 'New'; counts[s]++; });
+    var allOn = !cyclesStatusFilter;
+    el.innerHTML = '<button type="button" class="stat' + (allOn ? ' active' : '') + '" data-cycle-status-filter="" aria-pressed="' + (allOn ? 'true' : 'false') + '" title="Show all cycles">' +
+      '<div class="n">' + cycles.length + '</div><div class="l">All cycles</div></button>' +
+      CYCLE_STATUSES.map(function (s) {
+        var on = cyclesStatusFilter === s;
+        return '<button type="button" class="stat ' + (CYCLE_STATUS_TONE[s] || '') + (on ? ' active' : '') +
+          '" data-cycle-status-filter="' + esc(s) + '" aria-pressed="' + (on ? 'true' : 'false') +
+          '" title="' + (on ? 'Showing only ' + esc(s) + ' — click to clear' : 'Show only ' + esc(s)) + '">' +
+          '<div class="n">' + counts[s] + '</div><div class="l">' + esc(s) + '</div></button>';
+      }).join('');
   }
   function sortCyclesForDisplay(cycles) {
     var sorted = cycles.slice();
@@ -5715,6 +5744,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   }
   function renderCyclesList() {
     renderMentionBadge();
+    renderCyclesStatusSummary();
     var el = document.getElementById('cyclesList');
     var allCycles = liveCyclesOf(state.cycles);
     var cycles = sortCyclesForDisplay(filterCyclesForDisplay(allCycles));
@@ -5729,7 +5759,10 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       return;
     }
     if (!cycles.length) {
-      el.innerHTML = '<div class="empty">No cycles match “' + esc(cyclesSearchTerm.trim()) + '” — try a different cycle name or status.</div>';
+      var noMatchMsg = cyclesSearchTerm.trim()
+        ? 'No cycles match “' + esc(cyclesSearchTerm.trim()) + '”' + (cyclesStatusFilter ? ' in ' + esc(cyclesStatusFilter) : '') + ' — try a different cycle name or status.'
+        : 'No cycles with status “' + esc(cyclesStatusFilter) + '”.';
+      el.innerHTML = '<div class="empty">' + noMatchMsg + '</div>';
       return;
     }
     el.innerHTML = cycles.map(function (c) {
@@ -6591,6 +6624,13 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   })();
   document.getElementById('cyclesSearch').oninput = function (e) {
     cyclesSearchTerm = e.target.value || '';
+    renderCyclesList();
+  };
+  document.getElementById('cyclesStatusSummary').onclick = function (e) {
+    var b = e.target.closest('[data-cycle-status-filter]');
+    if (!b) return;
+    var v = b.getAttribute('data-cycle-status-filter');
+    cyclesStatusFilter = (cyclesStatusFilter === v || !v) ? '' : v;
     renderCyclesList();
   };
   document.getElementById('cycleModalCancel').onclick = closeCycleModal;
