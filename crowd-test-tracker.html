@@ -823,6 +823,14 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .testplan-upload { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .8rem; }
 .testplan-status { color: var(--muted); font-size: .75rem; }
 .testplan-err { color:#b45309; font-weight:600; }
+.chat-attach-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 2px; }
+.chat-attach-label { font-size: .75rem; padding: 3px 8px; }
+.chat-attach-status { color: var(--muted); font-size: .72rem; }
+.chat-attach-err { color: #b45309; font-weight: 600; }
+.chat-attach-x { border: none; background: none; cursor: pointer; color: var(--muted); font-size: .85rem; padding: 0 2px; }
+.chat-attach-x:hover { color: var(--bad); }
+.msg-attach { margin-top: 2px; }
+.msg-attach a { font-size: .82rem; font-weight: 600; }
 .btn-testplan { background: #059669; color: #fff; border-color: #047857; }
 .btn-testplan:hover { background: #047857; }
 .btn-testplan.is-off { background: var(--surface); color: var(--text); border-color: var(--border); }
@@ -1680,7 +1688,9 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         // copy right back. Deleted is a tombstone like everywhere else now, so it has to survive
         // this rebuild same as id/replyToId/editedAt above.
         deleted: !!m.deleted,
-        deletedAt: m.deletedAt || ''
+        deletedAt: m.deletedAt || '',
+        attachmentUrl: m.attachmentUrl || '',
+        attachmentName: m.attachmentName || ''
       };
     });
     out.triage = t.triage || 'Pending';
@@ -1884,6 +1894,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   // the per-transaction and cycle-wide chats. Value is the message id being edited/replied to.
   var chatEditingId = {};
   var chatReplyTarget = {};
+  var pendingChatAttachment = {}; // ownerKey -> { name, url } once uploaded, included on the next Send
   var saveTimer = null;
   var idSaveTimer = null;
   var cycleModalEditId = null;
@@ -2425,6 +2436,29 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       '<span class="msg-quote-txt">' + esc(snippet) + '</span></div>';
   }
 
+  /** A chat thread's scroll position used to reset to the top on every re-render (e.g. a live-sync
+   *  update landing while someone was reading up through older messages) — the DOM is rebuilt from
+   *  scratch and nothing restored where the user had scrolled. Capture it right before the rebuild
+   *  and restore it right after: stay pinned to the bottom if that's where they were (so a new
+   *  message still scrolls into view), otherwise put them back exactly where they were reading. */
+  function captureThreadScroll(root, selector) {
+    var out = {};
+    (root || document).querySelectorAll(selector).forEach(function (th) {
+      var key = th.getAttribute('data-thread') || th.getAttribute('data-cycle-thread');
+      if (!key) return;
+      out[key] = { top: th.scrollTop, atBottom: th.scrollHeight - th.scrollTop - th.clientHeight < 40 };
+    });
+    return out;
+  }
+  function restoreThreadScroll(root, selector, saved) {
+    (root || document).querySelectorAll(selector).forEach(function (th) {
+      var key = th.getAttribute('data-thread') || th.getAttribute('data-cycle-thread');
+      var s = key && saved[key];
+      if (!s) return;
+      th.scrollTop = s.atBottom ? th.scrollHeight : s.top;
+    });
+  }
+
   function chatThreadHtml(t, ownerKey) {
     var chat = normalizeChatList(t.chat);
     t.chat = chat;   // canonical form (tombstones included) persists back onto the record
@@ -2450,7 +2484,8 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       return '<div class="msg ' + cls + '" data-msg-id="' + esc(m.id) + '">' +
         msgQuoteHtml(chat, m.replyToId) +
         '<div class="who">' + whoLine + '</div>' +
-        '<div class="txt">' + highlightMentions(esc(m.message)) + '</div>' +
+        (m.message ? '<div class="txt">' + highlightMentions(esc(m.message)) + '</div>' : '') +
+        (m.attachmentUrl ? '<div class="msg-attach"><a href="' + esc(m.attachmentUrl) + '" target="_blank" rel="noopener">📎 ' + esc(m.attachmentName || 'attachment') + '</a></div>' : '') +
         '<div class="msg-foot">' +
         '<span class="when">' + esc(formatWhen(m.ts)) + (m.editedAt ? ' <span class="msg-edited">(edited)</span>' : '') + '</span>' +
         '<span class="msg-actions">' +
@@ -2473,6 +2508,17 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       '<button type="button" class="reply-bar-cancel" data-msg-action="cancel-reply">×</button></div>';
   }
 
+  /** Attach-file control shown under the compose textarea (cycle chat and per-transaction chat
+   *  alike) — picking a file uploads it right away and holds it as "ready to send" until Send is
+   *  clicked, same Live-sync gating as the video/test-plan uploads above. */
+  function chatAttachRowHtml(ownerKey) {
+    return '<div class="chat-attach-row">' +
+      '<label class="btn btn-sm chat-attach-label' + (videoResolverReady() ? '' : ' is-off') + '">📎 Attach file' +
+      '<input type="file" data-chat-attach-input="' + esc(ownerKey) + '" style="display:none" ' + (videoResolverReady() ? '' : 'disabled') + ' /></label>' +
+      '<span class="chat-attach-status" data-chat-attach-status="' + esc(ownerKey) + '">' + chatPendingAttachmentHtml(ownerKey) + '</span>' +
+      '</div>';
+  }
+
   function chatBlockHtml(t) {
     var fromName = displayLabel();
     var chat = normalizeChatList(t.chat);
@@ -2487,6 +2533,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       '<div class="chat-compose">' +
       '<div class="compose-from-pill">From: ' + esc(fromName) + ' · ' + esc(identity.role || 'Esty team') + '</div>' +
       '<textarea class="chat-input" data-input="' + esc(t.id) + '" placeholder="Write a message…" rows="1"></textarea>' +
+      chatAttachRowHtml(ownerKey) +
       '<div class="row-btns"><button type="button" class="btn btn-primary btn-sm chat-send" data-send="' + esc(t.id) + '">Send</button></div>' +
       '</div></div></div>';
   }
@@ -2894,6 +2941,40 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     });
   }
 
+  /* ---------- Chat file attachment (Supabase Storage, bucket "chat-attachments") ----------
+   *  Reported: a tester had no way to attach a file to the Applause chat at all and had to send
+   *  it via Slack instead. Unlike the video/test-plan uploads above (which attach straight to a
+   *  transaction/cycle record), a chat attachment belongs to the NEXT message sent, so it's held
+   *  as a pending upload per chat (ownerKey = "cycle:<id>" or "tx:<id>") until Send is clicked. */
+  function uploadChatAttachment(ownerKey, file, statusEl) {
+    function setS(html) { if (statusEl) statusEl.innerHTML = html; }
+    if (!videoResolverReady()) { setS('<span class="chat-attach-err">Connect Live sync first — the file needs Supabase Storage to be shared.</span>'); return; }
+    var path = ownerKey.replace(/[^A-Za-z0-9_-]+/g, '-') + '/' + Date.now() + '-' + sanitizeStorageName(file.name);
+    setS('Uploading… ' + (file.size / 1048576).toFixed(1) + ' MB');
+    supabaseClient.storage.from('chat-attachments').upload(path, file, { upsert: true, contentType: file.type || 'application/octet-stream' })
+      .then(function (res) {
+        if (res.error) throw res.error;
+        var pub = supabaseClient.storage.from('chat-attachments').getPublicUrl(path);
+        var url = pub && pub.data && pub.data.publicUrl;
+        if (!url) throw new Error('No public URL returned');
+        pendingChatAttachment[ownerKey] = { name: file.name, url: url };
+        setS(chatPendingAttachmentHtml(ownerKey));
+      })
+      .catch(function (err) {
+        var msg = (err && (err.message || err.error_description)) || String(err);
+        if (/not found|bucket/i.test(msg)) msg += ' — run sql/supabase-chat-attachment.sql in Supabase first.';
+        delete pendingChatAttachment[ownerKey];
+        setS('<span class="chat-attach-err">Upload failed: ' + esc(msg) + '</span>');
+      });
+  }
+
+  function chatPendingAttachmentHtml(ownerKey) {
+    var p = pendingChatAttachment[ownerKey];
+    if (!p) return videoResolverReady() ? '' : 'Needs <strong>Live sync</strong> connected — the file is shared via Supabase Storage.';
+    return '📎 <strong>' + esc(p.name) + '</strong> ready to send ' +
+      '<button type="button" class="chat-attach-x" data-chat-attach-remove="' + esc(ownerKey) + '" title="Remove attachment">×</button>';
+  }
+
   /* ---------- Jira section ----------
      One primary action per state, status first, everything else behind clearly
      named collapsible groups (no nested "Advanced", no duplicated buttons). */
@@ -3122,7 +3203,9 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       ? '<div class="link-row"><a href="' + esc(t.videoLink) + '" target="_blank" rel="noopener">Open video link ↗</a></div>'
       : '';
 
-    document.getElementById('pBody').innerHTML =
+    var pBody = document.getElementById('pBody');
+    var savedPanelThreadScroll = captureThreadScroll(pBody, '.chat-thread[data-thread]');
+    pBody.innerHTML =
       acc('Chat', chatBlockHtml(t)) +
       acc('Details',
         '<div class="section"><div class="grid2">' +
@@ -3150,6 +3233,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       acc('Notes',
         '<div class="section">' + field('fNotes', 'Internal notes', t.notes, 'textarea') + '</div>'
       );
+    restoreThreadScroll(pBody, '.chat-thread[data-thread]', savedPanelThreadScroll);
 
     // Header inputs must exist in the DOM before bindPanel() wires them up — bindPanel binds
     // by querying #pTitle's children, so building the body first (chat included) and the
@@ -3662,18 +3746,22 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   function sendChat(txId, inputEl) {
     var t = getTx(txId); if (!t) return;
     var text = (inputEl && inputEl.value || '').trim();
-    if (!text) return;
-    t.chat = normalizeChatList(t.chat);
     var ownerKey = 'tx:' + txId;
+    var attachment = pendingChatAttachment[ownerKey];
+    if (!text && !attachment) return;
+    t.chat = normalizeChatList(t.chat);
     t.chat.push({
       id: uid('msg'),
       ts: new Date().toISOString(),
       from: displayLabel(),
       role: identity.role || 'Esty team',
       message: text,
-      replyToId: chatReplyTarget[ownerKey] || ''
+      replyToId: chatReplyTarget[ownerKey] || '',
+      attachmentUrl: (attachment && attachment.url) || '',
+      attachmentName: (attachment && attachment.name) || ''
     });
     delete chatReplyTarget[ownerKey];
+    delete pendingChatAttachment[ownerKey];
     if (inputEl) inputEl.value = '';
     openAcc['Chat'] = true;
     markChatRead(t.chat, chatKey('tx', txId));   // replying to a thread means I read it
@@ -3687,18 +3775,22 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var c = (state.cycles || []).find(function (x) { return x.id === cycleId; });
     if (!c) return;
     var text = (inputEl && inputEl.value || '').trim();
-    if (!text) return;
-    c.chat = normalizeChatList(c.chat);
     var ownerKey = 'cycle:' + cycleId;
+    var attachment = pendingChatAttachment[ownerKey];
+    if (!text && !attachment) return;
+    c.chat = normalizeChatList(c.chat);
     c.chat.push({
       id: uid('msg'),
       ts: new Date().toISOString(),
       from: displayLabel(),
       role: identity.role || 'Esty team',
       message: text,
-      replyToId: chatReplyTarget[ownerKey] || ''
+      replyToId: chatReplyTarget[ownerKey] || '',
+      attachmentUrl: (attachment && attachment.url) || '',
+      attachmentName: (attachment && attachment.name) || ''
     });
     delete chatReplyTarget[ownerKey];
+    delete pendingChatAttachment[ownerKey];
     if (inputEl) inputEl.value = '';
     markChatRead(c.chat, chatKey('cycle', cycleId));   // replying means I read it
     persist();
@@ -3789,6 +3881,14 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   document.addEventListener('blur', function (e) {
     if (e.target === mentionActiveTa) setTimeout(closeMentionDropdown, 150);
   }, true);
+  document.addEventListener('click', function (e) {
+    var rm = e.target.closest && e.target.closest('[data-chat-attach-remove]');
+    if (!rm) return;
+    var ownerKey = rm.getAttribute('data-chat-attach-remove');
+    delete pendingChatAttachment[ownerKey];
+    var statusEl = document.querySelector('[data-chat-attach-status="' + ownerKey + '"]');
+    if (statusEl) statusEl.innerHTML = chatPendingAttachmentHtml(ownerKey);
+  });
 
   /** Shared mutation helpers for chat messages — both the per-transaction and cycle-wide chats
    *  reuse these (looked up by the owner's own .chat array, so one implementation covers both). */
@@ -3903,6 +4003,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       '<div class="chat-compose">' +
       '<div class="compose-from-pill">From: ' + esc(fromName) + ' · ' + esc(identity.role || 'Esty team') + '</div>' +
       '<textarea class="chat-input" data-cycle-input="' + esc(c.id) + '" placeholder="Message to/from Applause for this whole cycle…" rows="1"></textarea>' +
+      chatAttachRowHtml(ownerKey) +
       '<div class="row-btns"><button type="button" class="btn btn-primary btn-sm cycle-chat-send" data-cycle-send="' + esc(c.id) + '">Send</button></div>' +
       '</div></div></div>';
   }
@@ -5771,6 +5872,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var hadFocus = focused && focused.matches && focused.matches('textarea[data-cycle-input]');
     var draftCycleId = hadFocus ? focused.getAttribute('data-cycle-input') : '';
     var draftText = hadFocus ? focused.value : '';
+    var savedThreadScroll = captureThreadScroll(el, '.chat-thread[data-cycle-thread]');
     if (!allCycles.length) {
       el.innerHTML = '<div class="empty">No cycles yet — click “+ Add cycle”</div>';
       return;
@@ -5841,6 +5943,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       var ta = el.querySelector('textarea[data-cycle-input="' + draftCycleId + '"]');
       if (ta) { ta.value = draftText; ta.focus(); }
     }
+    restoreThreadScroll(el, '.chat-thread[data-cycle-thread]', savedThreadScroll);
   }
 
   function historySnapshotSummary(snap) {
@@ -6794,6 +6897,13 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       }
       return;
     }
+    var attachInput = e.target.closest && e.target.closest('[data-chat-attach-input]');
+    if (attachInput && attachInput.files && attachInput.files[0]) {
+      var attachOwnerKey = attachInput.getAttribute('data-chat-attach-input');
+      var attachStatusEl = document.querySelector('#cyclesList [data-chat-attach-status="' + attachOwnerKey + '"]');
+      uploadChatAttachment(attachOwnerKey, attachInput.files[0], attachStatusEl);
+      return;
+    }
     var input = e.target.closest && e.target.closest('[data-testplan-upload-input]');
     if (!input || !input.files || !input.files[0]) return;
     var cycleId = input.getAttribute('data-testplan-upload-input');
@@ -7005,6 +7115,13 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   });
   document.getElementById('panel').addEventListener('click', handlePanelAction);
   document.getElementById('panel').addEventListener('change', function (e) {
+    var attachInput = e.target.closest && e.target.closest('[data-chat-attach-input]');
+    if (attachInput && attachInput.files && attachInput.files[0]) {
+      var attachOwnerKey = attachInput.getAttribute('data-chat-attach-input');
+      var attachStatusEl = document.querySelector('#panel [data-chat-attach-status="' + attachOwnerKey + '"]');
+      uploadChatAttachment(attachOwnerKey, attachInput.files[0], attachStatusEl);
+      return;
+    }
     var input = e.target.closest && e.target.closest('[data-video-upload-input]');
     if (!input || !input.files || !input.files[0]) return;
     var txId = input.getAttribute('data-video-upload-input');
