@@ -826,6 +826,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .chat-attach-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 2px; }
 .chat-attach-label { font-size: .75rem; padding: 3px 8px; }
 .chat-attach-status { color: var(--muted); font-size: .72rem; }
+.chat-attach-paste-hint { color: var(--muted); font-size: .72rem; font-style: italic; }
 .chat-attach-err { color: #b45309; font-weight: 600; }
 .chat-attach-x { border: none; background: none; cursor: pointer; color: var(--muted); font-size: .85rem; padding: 0 2px; }
 .chat-attach-x:hover { color: var(--bad); }
@@ -2515,6 +2516,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     return '<div class="chat-attach-row">' +
       '<label class="btn btn-sm chat-attach-label' + (videoResolverReady() ? '' : ' is-off') + '">📎 Attach file' +
       '<input type="file" data-chat-attach-input="' + esc(ownerKey) + '" style="display:none" ' + (videoResolverReady() ? '' : 'disabled') + ' /></label>' +
+      (videoResolverReady() ? '<span class="chat-attach-paste-hint">or paste a screenshot (Cmd/Ctrl+V)</span>' : '') +
       '<span class="chat-attach-status" data-chat-attach-status="' + esc(ownerKey) + '">' + chatPendingAttachmentHtml(ownerKey) + '</span>' +
       '</div>';
   }
@@ -3888,6 +3890,28 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     delete pendingChatAttachment[ownerKey];
     var statusEl = document.querySelector('[data-chat-attach-status="' + ownerKey + '"]');
     if (statusEl) statusEl.innerHTML = chatPendingAttachmentHtml(ownerKey);
+  });
+  // Paste a screenshot (Cmd/Ctrl+V) straight into a chat compose box — same upload pipeline as
+  // the 📎 Attach file button, just skipping the file-picker step. Only intercepts an actual
+  // image on the clipboard; a normal text paste is left completely alone.
+  document.addEventListener('paste', function (e) {
+    var ta = e.target && e.target.closest && e.target.closest('textarea.chat-input');
+    if (!ta) return;
+    var items = (e.clipboardData && e.clipboardData.items) || [];
+    var imgItem = null;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type && items[i].type.indexOf('image/') === 0) { imgItem = items[i]; break; }
+    }
+    if (!imgItem) return; // not an image — let the normal text paste happen
+    e.preventDefault();
+    var file = imgItem.getAsFile();
+    if (!file) return;
+    var ext = (imgItem.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '') || 'png';
+    var named = new File([file], 'screenshot-' + Date.now() + '.' + ext, { type: imgItem.type });
+    var ownerKey = ta.hasAttribute('data-cycle-input') ? 'cycle:' + ta.getAttribute('data-cycle-input') : 'tx:' + ta.getAttribute('data-input');
+    var compose = ta.closest('.chat-compose');
+    var statusEl = compose ? compose.querySelector('[data-chat-attach-status="' + ownerKey + '"]') : null;
+    uploadChatAttachment(ownerKey, named, statusEl);
   });
 
   /** Shared mutation helpers for chat messages — both the per-transaction and cycle-wide chats
