@@ -832,6 +832,12 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .chat-attach-x:hover { color: var(--bad); }
 .msg-attach { margin-top: 2px; }
 .msg-attach a { font-size: .82rem; font-weight: 600; }
+.msg-attach-thumb { max-width: 220px; max-height: 160px; border-radius: 8px; border: 1px solid var(--border); cursor: zoom-in; display: block; }
+.img-lightbox {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, .88); z-index: 9999;
+  display: flex; align-items: center; justify-content: center; cursor: zoom-out; padding: 24px;
+}
+.img-lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
 .btn-testplan { background: #059669; color: #fff; border-color: #047857; }
 .btn-testplan:hover { background: #047857; }
 .btn-testplan.is-off { background: var(--surface); color: var(--text); border-color: var(--border); }
@@ -1152,6 +1158,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       <div id="historyList"></div>
     </div>
   </div>
+  <div id="imgLightbox" class="img-lightbox view-hidden" title="Click to close"><img id="imgLightboxImg" alt="" /></div>
 </div>
 
 
@@ -2460,6 +2467,37 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     });
   }
 
+  /** Reported: "אני מנסה לכתוב והוא בורח לי מהריבוע" — typing in the transaction panel (the chat
+   *  compose box, Notes, any field) got yanked out from under the cursor because a live-sync
+   *  update landing mid-keystroke rebuilds the whole panel body from scratch, destroying the
+   *  very textarea/input that had focus. Capture whichever field is focused (by id, or by
+   *  data-input for the chat textarea which has none) right before the rebuild, and put the
+   *  same text + cursor position + focus back on its freshly-built replacement right after. */
+  function captureFocusedField(root) {
+    var el = document.activeElement;
+    if (!el || !root || !root.contains(el)) return null;
+    if (!/^(TEXTAREA|INPUT|SELECT)$/.test(el.tagName)) return null;
+    return {
+      id: el.id || '',
+      dataInput: el.getAttribute('data-input') || '',
+      value: el.value,
+      selStart: (typeof el.selectionStart === 'number') ? el.selectionStart : null,
+      selEnd: (typeof el.selectionEnd === 'number') ? el.selectionEnd : null
+    };
+  }
+  function restoreFocusedField(root, saved) {
+    if (!saved || !root) return;
+    var el = null;
+    if (saved.id) el = root.querySelector('#' + saved.id);
+    else if (saved.dataInput) el = root.querySelector('[data-input="' + saved.dataInput + '"]');
+    if (!el) return;
+    el.value = saved.value;
+    el.focus();
+    if (saved.selStart != null && el.setSelectionRange) {
+      try { el.setSelectionRange(saved.selStart, saved.selEnd); } catch (e) {}
+    }
+  }
+
   function chatThreadHtml(t, ownerKey) {
     var chat = normalizeChatList(t.chat);
     t.chat = chat;   // canonical form (tombstones included) persists back onto the record
@@ -2486,7 +2524,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         msgQuoteHtml(chat, m.replyToId) +
         '<div class="who">' + whoLine + '</div>' +
         (m.message ? '<div class="txt">' + highlightMentions(esc(m.message)) + '</div>' : '') +
-        (m.attachmentUrl ? '<div class="msg-attach"><a href="' + esc(m.attachmentUrl) + '" target="_blank" rel="noopener">📎 ' + esc(m.attachmentName || 'attachment') + '</a></div>' : '') +
+        (m.attachmentUrl ? '<div class="msg-attach">' + attachmentHtml(m.attachmentUrl, m.attachmentName) + '</div>' : '') +
         '<div class="msg-foot">' +
         '<span class="when">' + esc(formatWhen(m.ts)) + (m.editedAt ? ' <span class="msg-edited">(edited)</span>' : '') + '</span>' +
         '<span class="msg-actions">' +
@@ -2840,8 +2878,32 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     return String(name || 'video').replace(/[^A-Za-z0-9_.-]+/g, '-').slice(-120) || 'video';
   }
 
+  var IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i;
+  /** A chat attachment that's an image shows as a clickable thumbnail (opens the ⛶ lightbox
+   *  below) instead of a bare filename link — reported: a pasted screenshot should be visible
+   *  in place, not just a download link. Anything else keeps the plain link. */
+  function attachmentHtml(url, name) {
+    var isImage = IMAGE_EXT_RE.test(name || '') || IMAGE_EXT_RE.test(url || '');
+    if (isImage) {
+      return '<img class="msg-attach-thumb" src="' + esc(url) + '" alt="' + esc(name || 'image') + '" data-lightbox-img="' + esc(url) + '" title="Click to enlarge" />';
+    }
+    return '<a href="' + esc(url) + '" target="_blank" rel="noopener">📎 ' + esc(name || 'attachment') + '</a>';
+  }
+
+  /** The status element passed in at upload time can go stale — a live-sync update landing
+   *  while the upload is still in flight rebuilds the surrounding card/panel from scratch, so
+   *  the original DOM node is detached and writing to it is invisible to the user ("nothing
+   *  happens"). Re-look it up by its stable selector every time, falling back to the original
+   *  reference only if nothing current matches (e.g. the card got removed outright). */
+  function makeStatusSetter(selector, fallbackEl) {
+    return function (html) {
+      var el = document.querySelector(selector) || fallbackEl;
+      if (el) el.innerHTML = html;
+    };
+  }
+
   function uploadVideoFile(t, file, statusEl) {
-    function setS(html) { if (statusEl) statusEl.innerHTML = html; }
+    var setS = makeStatusSetter('[data-video-upload-status="' + t.id + '"]', statusEl);
     if (!videoResolverReady()) { setS('<span class="video-err">Connect Live sync first — the file needs Supabase Storage to be shared.</span>'); return; }
     var path = t.id + '/' + Date.now() + '-' + sanitizeStorageName(file.name);
     setS('Uploading… 0.0 / ' + (file.size / 1048576).toFixed(1) + ' MB');
@@ -2902,7 +2964,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   }
 
   function uploadTestPlanFile(c, file, statusEl) {
-    function setS(html) { if (statusEl) statusEl.innerHTML = html; }
+    var setS = makeStatusSetter('[data-testplan-upload-status="' + c.id + '"]', statusEl);
     if (!videoResolverReady()) { setS('<span class="testplan-err">Connect Live sync first — the file needs Supabase Storage to be shared.</span>'); return; }
     var path = c.id + '/' + Date.now() + '-' + sanitizeStorageName(file.name);
     setS('Uploading… ' + (file.size / 1048576).toFixed(1) + ' MB');
@@ -2949,7 +3011,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
    *  transaction/cycle record), a chat attachment belongs to the NEXT message sent, so it's held
    *  as a pending upload per chat (ownerKey = "cycle:<id>" or "tx:<id>") until Send is clicked. */
   function uploadChatAttachment(ownerKey, file, statusEl) {
-    function setS(html) { if (statusEl) statusEl.innerHTML = html; }
+    var setS = makeStatusSetter('[data-chat-attach-status="' + ownerKey + '"]', statusEl);
     if (!videoResolverReady()) { setS('<span class="chat-attach-err">Connect Live sync first — the file needs Supabase Storage to be shared.</span>'); return; }
     var path = ownerKey.replace(/[^A-Za-z0-9_-]+/g, '-') + '/' + Date.now() + '-' + sanitizeStorageName(file.name);
     setS('Uploading… ' + (file.size / 1048576).toFixed(1) + ' MB');
@@ -3207,6 +3269,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
 
     var pBody = document.getElementById('pBody');
     var savedPanelThreadScroll = captureThreadScroll(pBody, '.chat-thread[data-thread]');
+    var savedFocusedField = captureFocusedField(pBody);
     pBody.innerHTML =
       acc('Chat', chatBlockHtml(t)) +
       acc('Details',
@@ -3236,6 +3299,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         '<div class="section">' + field('fNotes', 'Internal notes', t.notes, 'textarea') + '</div>'
       );
     restoreThreadScroll(pBody, '.chat-thread[data-thread]', savedPanelThreadScroll);
+    restoreFocusedField(pBody, savedFocusedField);
 
     // Header inputs must exist in the DOM before bindPanel() wires them up — bindPanel binds
     // by querying #pTitle's children, so building the body first (chat included) and the
@@ -3912,6 +3976,25 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var compose = ta.closest('.chat-compose');
     var statusEl = compose ? compose.querySelector('[data-chat-attach-status="' + ownerKey + '"]') : null;
     uploadChatAttachment(ownerKey, named, statusEl);
+  });
+  // Image attachment thumbnail -> full-size lightbox (click anywhere on it, or Escape, to close).
+  document.addEventListener('click', function (e) {
+    var thumb = e.target.closest && e.target.closest('[data-lightbox-img]');
+    if (thumb) {
+      document.getElementById('imgLightboxImg').src = thumb.getAttribute('data-lightbox-img');
+      document.getElementById('imgLightbox').classList.remove('view-hidden');
+      return;
+    }
+    if (e.target.closest && e.target.closest('#imgLightbox')) {
+      document.getElementById('imgLightbox').classList.add('view-hidden');
+      document.getElementById('imgLightboxImg').src = '';
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !document.getElementById('imgLightbox').classList.contains('view-hidden')) {
+      document.getElementById('imgLightbox').classList.add('view-hidden');
+      document.getElementById('imgLightboxImg').src = '';
+    }
   });
 
   /** Shared mutation helpers for chat messages — both the per-transaction and cycle-wide chats
