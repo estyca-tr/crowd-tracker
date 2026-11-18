@@ -5402,7 +5402,12 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     document.getElementById('cycleWorkspace').classList.add('view-hidden');
     document.getElementById('appTitle').textContent = 'Crowd Test Tracker';
     document.getElementById('appSub').textContent = 'Cycles · Applause crowd testing · saved locally in the browser';
-    closeCycleModal();
+    // Only an ACTUAL move away from an open cycle should close the cycle modal. renderAll() also
+    // calls this function on every live-sync re-render while already on the landing page (cycleId
+    // is already null then, nothing is being "left") — closing it unconditionally was slamming the
+    // Edit-cycle modal shut mid-keystroke every time a remote update arrived. Reported: "אני לוחצת
+    // על חלון ה edit והוא כל רגע מעלים לי את החלון אני לא מצליחה להתלבש עליו".
+    if (cycleId) closeCycleModal();
     renderCyclesList();
   }
 
