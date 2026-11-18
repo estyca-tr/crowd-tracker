@@ -1058,7 +1058,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     <button class="btn btn-primary btn-lg" id="btnAdd" type="button">+ Add transaction</button>
     <span class="add-tester-inline view-hidden" id="addTesterInline">
       <input type="text" id="newTesterName" placeholder="Tester name" autocomplete="off" />
-      <button class="btn btn-sm" id="btnAddTester" type="button">+ Add tester</button>
+      <button class="btn btn-primary btn-lg" id="btnAddTester" type="button">+ Add tester</button>
     </span>
     <span style="font-size:.8rem;color:var(--muted)">Opens a draft — close × without edits to discard</span>
   </div>
@@ -2444,7 +2444,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     return '<details class="tester-group" data-tester-group="' + esc(name) + '"' + (open ? ' open' : '') + '>' +
       '<summary><span class="tester-group-name">' + esc(label) + '</span>' +
       '<span class="tester-group-count">' + rows.length + '</span>' +
-      (name ? '<button type="button" class="btn btn-sm" data-add-tx-for-tester="' + esc(name) + '" title="Add a test case for ' + esc(label) + '">+ Add transaction</button>' : '') +
+      (name ? '<button type="button" class="btn btn-primary" data-add-tx-for-tester="' + esc(name) + '" title="Add a test case for ' + esc(label) + '">+ Add transaction</button>' : '') +
       '</summary>' +
       (rows.length ? rows.map(txRowHtml).join('') : '<div class="empty" style="margin:6px 0 2px">No test cases yet for this tester.</div>') +
       '</details>';
@@ -2472,6 +2472,11 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var grouping = !!(cycle && cycle.groupByTester);
     var addTesterInline = document.getElementById('addTesterInline');
     if (addTesterInline) addTesterInline.classList.toggle('view-hidden', !grouping);
+    // Grouped by tester: the one way to add a transaction is under a specific tester (each group
+    // has its own prominent "+ Add transaction") — the global button would add an unassigned,
+    // out-of-order row, so it's hidden rather than offering a second, confusing path.
+    var addBtn = document.getElementById('btnAdd');
+    if (addBtn) addBtn.classList.toggle('view-hidden', grouping);
     if (!rows.length) {
       var total = getTxs().length;
       el.innerHTML = total
