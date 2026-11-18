@@ -110,6 +110,21 @@ a { color: var(--accent); }
   padding: 0; box-shadow: none; overflow: hidden; transition: .12s;
 }
 .card:hover { border-color: #c7d2fe; background: #fafbff; }
+.tester-group {
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); overflow: hidden;
+}
+.tester-group > summary {
+  cursor: pointer; list-style: none; padding: 10px 14px; display: flex; align-items: center; gap: 10px;
+  font-weight: 700; background: var(--surface);
+}
+.tester-group > summary::-webkit-details-marker { display: none; }
+.tester-group > summary::before { content: '▸'; font-size: .75rem; color: var(--muted); transition: transform .12s; }
+.tester-group[open] > summary::before { transform: rotate(90deg); }
+.tester-group-count { color: var(--muted); font-weight: 650; font-size: .85rem; }
+.tester-group > summary button { margin-left: auto; }
+.tester-group > .card { margin: 6px 10px; }
+.tester-group > .card:last-child { margin-bottom: 10px; }
+.tester-group > .empty { margin: 0 14px 10px; padding: 0; background: none; box-shadow: none; }
 .card.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); background: #f8faff; }
 .card-summary {
   padding: 8px 10px; cursor: pointer;
@@ -423,6 +438,7 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
   width: 20px; height: 20px; cursor: pointer; font-size: .7rem; line-height: 1; padding: 0;
 }
 .custom-role-chip button:hover { background: #fecaca; color: #b91c1c; }
+.testers-chip-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
 .role-add-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .role-add-row input {
   border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px;
@@ -1030,6 +1046,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   <div class="summary" id="summary"></div>
   <div class="actions-bar">
     <button class="btn btn-primary btn-lg" id="btnAdd" type="button">+ Add transaction</button>
+    <button class="btn btn-lg view-hidden" id="btnAddTester" type="button">+ Add tester</button>
     <span style="font-size:.8rem;color:var(--muted)">Opens a draft — close × without edits to discard</span>
   </div>
   <!-- Wrapper so the sticky .controls bar releases at the end of the list instead of
@@ -1140,6 +1157,21 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
             <button type="button" class="btn btn-sm" id="btnModalAddTitleField">Add</button>
           </div>
           <div class="cycle-brief-hint">Stored on the cycle as titleFields. Configure fully inside the cycle too.</div>
+        </div>
+      </details>
+      <details class="cycle-collapsible" id="modalTesterGroupDetails">
+        <summary>Group by tester (recurring cycles)</summary>
+        <div class="cycle-collapsible-body">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:600">
+            <input id="cycleGroupByTester" type="checkbox" />
+            Group transactions by tester instead of one flat list
+          </label>
+          <div class="cycle-brief-hint">For a recurring cycle where each tester runs several test cases in a set order — off leaves this cycle exactly as a normal transaction list.</div>
+          <div class="title-custom-row" style="margin-top:8px">
+            <input id="modalNewTester" type="text" placeholder="Tester name" autocomplete="off" />
+            <button type="button" class="btn btn-sm" id="btnModalAddTester">+ Add tester</button>
+          </div>
+          <div class="testers-chip-list" id="modalTestersList"></div>
         </div>
       </details>
       <div class="row-btns">
@@ -1620,6 +1652,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       uploadedVideoUrl: '', uploadedVideoName: '',
       crowdIssues: [], jiraBugs: [],
       notes: '',
+      tester: '', testSteps: '',
       pendingBugTeam: '',
       triage: 'Pending', waitingOn: '', openQuestions: false,
       chat: [],
@@ -1744,6 +1777,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       chat: [],
       testPlanFileUrl: '', testPlanFileName: '',
       plannedStartDate: '', plannedStartHistory: [],
+      groupByTester: false, testers: [],
       transactions: []
     };
   }
@@ -1766,6 +1800,8 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       testPlanFileName: c.testPlanFileName || '',
       plannedStartDate: c.plannedStartDate || '',
       plannedStartHistory: Array.isArray(c.plannedStartHistory) ? c.plannedStartHistory.filter(function (h) { return h && h.changedAt; }) : [],
+      groupByTester: !!c.groupByTester,
+      testers: Array.isArray(c.testers) ? c.testers.map(function (x) { return String(x || '').trim(); }).filter(Boolean) : [],
       transactions: txs.map(function (t, i) { return normalizeTx(t, 'tx-' + (i + 1)); })
     };
   }
@@ -1923,6 +1959,20 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       html += '<label><input type="checkbox" data-modal-title-field="' + esc(k) + '" checked /> ' + esc(k) + '</label>';
     });
     el.innerHTML = html;
+  }
+
+  var modalTestersDraft = [];
+  function renderModalTesters() {
+    var el = document.getElementById('modalTestersList');
+    if (!el) return;
+    if (!modalTestersDraft.length) {
+      el.innerHTML = '<span class="hint">No testers added yet.</span>';
+      return;
+    }
+    el.innerHTML = modalTestersDraft.map(function (name) {
+      return '<span class="custom-role-chip">' + esc(name) +
+        '<button type="button" data-remove-modal-tester="' + esc(name) + '" title="Remove tester">×</button></span>';
+    }).join('');
   }
 
 
@@ -2220,7 +2270,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var bugText = (t.jiraBugs || []).map(function (b) {
       return [b.key, b.link, b.notes].join(' ');
     }).join(' ');
-    return [t.username, t.paymentMethod, t.country, t.location, t.amountCurrency, t.testCaseId, t.actionTested, t.device, t.notes, issueText, bugText]
+    return [t.username, t.paymentMethod, t.country, t.location, t.amountCurrency, t.testCaseId, t.actionTested, t.device, t.notes, t.tester, t.testSteps, issueText, bugText]
       .join(' ').toLowerCase().indexOf(q) !== -1;
   }
   function filtered() {
@@ -2354,10 +2404,87 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     }).join(' · ');
   }
 
+  function txRowHtml(t) {
+    var badges = [];
+    var ac = approvedCount(t);
+    if (ac > 0) {
+      badges.push('<span class="badge badge-approved">' + esc(approvedBadgeText(t)) + '</span>');
+    }
+    badges.push(
+      '<span class="badge ' + resultClass(t.result) + '">' + esc(t.result || '—') + '</span>',
+      '<span class="badge ' + triageClass(t.triage) + '">' + esc(t.triage || 'Pending') + '</span>'
+    );
+    var nIssues = (t.crowdIssues || []).length;
+    if (nIssues) badges.push('<span class="badge badge-applause">Issues · ' + nIssues + '</span>');
+    // The actual numbers, not just a count — so you can spot/filter a specific Applause
+    // issue or Jira bug right from the list, without opening every row.
+    var applauseIds = (t.crowdIssues || []).map(function (ci) { return String(ci.applauseId || '').trim(); }).filter(Boolean);
+    if (applauseIds.length) badges.push('<span class="badge badge-id" title="Applause issue ' + esc(applauseIds.join(', ')) + '">📋 ' + esc(applauseIds[0]) + (applauseIds.length > 1 ? ' +' + (applauseIds.length - 1) : '') + '</span>');
+    var jiraKeys = (t.jiraBugs || []).map(function (b) { return String(b.key || '').trim(); }).filter(Boolean);
+    if (jiraKeys.length) badges.push('<span class="badge badge-id" title="Jira ' + esc(jiraKeys.join(', ')) + '">🐞 ' + esc(jiraKeys[0]) + (jiraKeys.length > 1 ? ' +' + (jiraKeys.length - 1) : '') + '</span>');
+    if (t.csvExportedAt && !(t.jiraBugs || []).some(function (b) { return String(b.key || '').trim(); })) badges.push('<span class="badge" style="background:#e0f2fe;color:#0369a1">Exported to CSV</span>');
+    if (t.isDraft) badges.push('<span class="badge" style="background:#fef3c7;color:#b45309">Draft</span>');
+
+    var cw = chatWaitingInfo(t);
+    if (cw.needed) {
+      var label = cw.count > 0 ? ('Chat waiting · ' + cw.count) : 'Chat waiting';
+      badges.push('<button type="button" class="badge badge-chat-wait' + (cw.count > 0 ? ' has-count' : '') +
+        '" data-markread="' + esc(t.id) + '" title="Unread messages — click to mark read without opening">' + esc(label) + '</button>');
+    }
+
+    return '<article class="card ' + (selectedId === t.id ? 'active' : '') + (ac > 0 ? ' is-approved' : '') + '" data-id="' + esc(t.id) + '">' +
+      '<div class="card-summary" data-open="' + esc(t.id) + '" tabindex="0" role="button" aria-label="Open transaction">' +
+      '<div class="card-main">' +
+      '<div class="card-title">' + cardTitle(t) + '</div>' +
+      '<div class="card-meta">' +
+      '<span>' + esc(t.country || t.location || '—') + '</span>' +
+      '<span>' + esc(t.device || '—') + '</span>' +
+      (t.amountCurrency ? '<span>' + esc(t.amountCurrency) + '</span>' : '') +
+      (t.testCaseId ? '<span>TC ' + esc(t.testCaseId) + '</span>' : '') +
+      '</div></div>' +
+      '<div class="card-right">' + badges.join('') + '</div>' +
+      '</div></article>';
+  }
+
+  var testerGroupOpen = {}; // tester name -> explicitly collapsed by the user (default open)
+  /** Recurring cycles: one row per tester, holding all the test cases THEY run, in the exact
+   *  order they run them (list position = execution order — no separate field to keep in sync).
+   *  Reported: "אני מנסה להבין ... שיהיה את האפשרות להוסיף טסטר ובתוכו להוסיף טרנזקציות". Opt-in
+   *  per cycle (c.groupByTester) so a normal transaction-oriented cycle is unaffected. */
+  function testerGroupHtml(name, rows) {
+    var label = name || 'Unassigned';
+    var open = testerGroupOpen[name || '__unassigned__'] !== false;
+    return '<details class="tester-group" data-tester-group="' + esc(name) + '"' + (open ? ' open' : '') + '>' +
+      '<summary><span class="tester-group-name">' + esc(label) + '</span>' +
+      '<span class="tester-group-count">' + rows.length + '</span>' +
+      (name ? '<button type="button" class="btn btn-sm" data-add-tx-for-tester="' + esc(name) + '" title="Add a test case for ' + esc(label) + '">+ Add transaction</button>' : '') +
+      '</summary>' +
+      (rows.length ? rows.map(txRowHtml).join('') : '<div class="empty" style="margin:6px 0 2px">No test cases yet for this tester.</div>') +
+      '</details>';
+  }
+  function groupedListHtml(cycle, rows) {
+    var byTester = {};
+    rows.forEach(function (t) {
+      var k = t.tester || '';
+      (byTester[k] = byTester[k] || []).push(t);
+    });
+    var names = (cycle.testers || []).slice();
+    // A tester name on a transaction but missing from cycle.testers (e.g. removed from the list
+    // later) still gets its own group — nothing silently disappears.
+    Object.keys(byTester).forEach(function (k) { if (k && names.indexOf(k) === -1) names.push(k); });
+    var html = names.map(function (name) { return testerGroupHtml(name, byTester[name] || []); }).join('');
+    html += testerGroupHtml('', byTester[''] || []);
+    return html;
+  }
+
   function renderList() {
     var rows = filtered();
     document.getElementById('visibleCount').textContent = rows.length + ' / ' + getTxs().length;
     var el = document.getElementById('list');
+    var cycle = activeCycle();
+    var grouping = !!(cycle && cycle.groupByTester);
+    var addTesterBtn = document.getElementById('btnAddTester');
+    if (addTesterBtn) addTesterBtn.classList.toggle('view-hidden', !grouping);
     if (!rows.length) {
       var total = getTxs().length;
       el.innerHTML = total
@@ -2365,47 +2492,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         : '<div class="empty">No transactions yet — use <strong>+ Add transaction</strong> above. New rows start as drafts; close × discards empty drafts.</div>';
       return;
     }
-    el.innerHTML = rows.map(function (t) {
-      var badges = [];
-      var ac = approvedCount(t);
-      if (ac > 0) {
-        badges.push('<span class="badge badge-approved">' + esc(approvedBadgeText(t)) + '</span>');
-      }
-      badges.push(
-        '<span class="badge ' + resultClass(t.result) + '">' + esc(t.result || '—') + '</span>',
-        '<span class="badge ' + triageClass(t.triage) + '">' + esc(t.triage || 'Pending') + '</span>'
-      );
-      var nIssues = (t.crowdIssues || []).length;
-      if (nIssues) badges.push('<span class="badge badge-applause">Issues · ' + nIssues + '</span>');
-      // The actual numbers, not just a count — so you can spot/filter a specific Applause
-      // issue or Jira bug right from the list, without opening every row.
-      var applauseIds = (t.crowdIssues || []).map(function (ci) { return String(ci.applauseId || '').trim(); }).filter(Boolean);
-      if (applauseIds.length) badges.push('<span class="badge badge-id" title="Applause issue ' + esc(applauseIds.join(', ')) + '">📋 ' + esc(applauseIds[0]) + (applauseIds.length > 1 ? ' +' + (applauseIds.length - 1) : '') + '</span>');
-      var jiraKeys = (t.jiraBugs || []).map(function (b) { return String(b.key || '').trim(); }).filter(Boolean);
-      if (jiraKeys.length) badges.push('<span class="badge badge-id" title="Jira ' + esc(jiraKeys.join(', ')) + '">🐞 ' + esc(jiraKeys[0]) + (jiraKeys.length > 1 ? ' +' + (jiraKeys.length - 1) : '') + '</span>');
-      if (t.csvExportedAt && !(t.jiraBugs || []).some(function (b) { return String(b.key || '').trim(); })) badges.push('<span class="badge" style="background:#e0f2fe;color:#0369a1">Exported to CSV</span>');
-      if (t.isDraft) badges.push('<span class="badge" style="background:#fef3c7;color:#b45309">Draft</span>');
-
-      var cw = chatWaitingInfo(t);
-      if (cw.needed) {
-        var label = cw.count > 0 ? ('Chat waiting · ' + cw.count) : 'Chat waiting';
-        badges.push('<button type="button" class="badge badge-chat-wait' + (cw.count > 0 ? ' has-count' : '') +
-          '" data-markread="' + esc(t.id) + '" title="Unread messages — click to mark read without opening">' + esc(label) + '</button>');
-      }
-
-      return '<article class="card ' + (selectedId === t.id ? 'active' : '') + (ac > 0 ? ' is-approved' : '') + '" data-id="' + esc(t.id) + '">' +
-        '<div class="card-summary" data-open="' + esc(t.id) + '" tabindex="0" role="button" aria-label="Open transaction">' +
-        '<div class="card-main">' +
-        '<div class="card-title">' + cardTitle(t) + '</div>' +
-        '<div class="card-meta">' +
-        '<span>' + esc(t.country || t.location || '—') + '</span>' +
-        '<span>' + esc(t.device || '—') + '</span>' +
-        (t.amountCurrency ? '<span>' + esc(t.amountCurrency) + '</span>' : '') +
-        (t.testCaseId ? '<span>TC ' + esc(t.testCaseId) + '</span>' : '') +
-        '</div></div>' +
-        '<div class="card-right">' + badges.join('') + '</div>' +
-        '</div></article>';
-    }).join('');
+    el.innerHTML = grouping ? groupedListHtml(cycle, rows) : rows.map(txRowHtml).join('');
   }
 
   /** <option> list for a fixed-value field. A value that predates the fixed list (this used to
@@ -3274,6 +3361,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       acc('Chat', chatBlockHtml(t)) +
       acc('Details',
         '<div class="section"><div class="grid2">' +
+        field('fTester', 'Tester', t.tester) +
         field('fUsername', 'eToro Username', t.username) +
         field('fMethod', 'Payment Method', t.paymentMethod) +
         field('fAction', 'Action tested', t.actionTested) +
@@ -3287,6 +3375,9 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         field('fTimestamp', 'Timestamp', t.timestamp) +
         field('fVideo', 'Link to video', t.videoLink, 'url') +
         '</div>' + videoLink + videoToolsHtml(t) + uploadedVideoHtml(t) + '</div>'
+      ) +
+      acc('Test case steps',
+        '<div class="section">' + field('fTestSteps', 'Steps performed (for functional / non-transaction tests)', t.testSteps, 'textarea') + '</div>'
       ) +
       acc('Issues (crowd)', issuesSectionHtml(t)) +
       acc('Jira', jiraSectionHtml(t)) +
@@ -3413,11 +3504,11 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       }
     }
     [
-      ['fUsername','username'],['fMethod','paymentMethod'],['fAction','actionTested'],
+      ['fTester','tester'],['fUsername','username'],['fMethod','paymentMethod'],['fAction','actionTested'],
       ['fResult','result'],['fCountry','country'],['fLocation','location'],
       ['fDevice','device'],['fTc','testCaseId'],['fWhitelist','whitelisting'],
       ['fAmount','amountCurrency'],['fTimestamp','timestamp'],['fVideo','videoLink'],
-      ['fNotes','notes']
+      ['fNotes','notes'],['fTestSteps','testSteps']
     ].forEach(function (pair) { bind(pair[0], pair[1]); });
 
     Array.prototype.forEach.call(panel.querySelectorAll('[data-ci-field]'), function (el) {
@@ -5186,13 +5277,17 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     return true;
   }
 
-  function addTx() {
+  function addTx(presetTester) {
     // Drop any previous unfinished draft first
     if (selectedId) discardDraftIfNeeded(selectedId);
     var id = nextId(rawTxs());
     var t = emptyTx(id);
     t.isDraft = true;
-    rawTxs().unshift(t);
+    // A tester's queue reads top-to-bottom as their run order, so a test case added for a
+    // specific tester goes at the END of that run (continuing the sequence) — the flat,
+    // ungrouped list keeps its existing newest-first convention (unshift).
+    if (presetTester) { t.tester = presetTester; rawTxs().push(t); }
+    else rawTxs().unshift(t);
     openAcc = {};
     selectedId = id;
     // Persist draft so refresh doesn't lose in-progress work; X will remove if empty
@@ -6137,10 +6232,15 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     }
     modalTitleFieldsDraft = normalizeTitleFields(c ? c.titleFields : DEFAULT_TITLE_FIELDS);
     renderModalTitleFields();
+    document.getElementById('cycleGroupByTester').checked = c ? !!c.groupByTester : false;
+    modalTestersDraft = (c && Array.isArray(c.testers)) ? c.testers.slice() : [];
+    renderModalTesters();
     var mb = document.getElementById('modalBriefDetails');
     var mt = document.getElementById('modalTitleDetails');
+    var mg = document.getElementById('modalTesterGroupDetails');
     if (mb) mb.open = false;
     if (mt) mt.open = false;
+    if (mg) mg.open = false;
     modal.classList.remove('view-hidden');
     setTimeout(function () { document.getElementById('cycleName').focus(); }, 0);
   }
@@ -6160,6 +6260,8 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       return;
     }
     if (!state.cycles) state.cycles = [];
+    var groupByTester = !!document.getElementById('cycleGroupByTester').checked;
+    var testers = modalTestersDraft.slice();
     var plannedStartMovedMsg = '';
     if (cycleModalEditId) {
       var c = state.cycles.find(function (x) { return x.id === cycleModalEditId; });
@@ -6167,6 +6269,8 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         c.name = name;
         c.notes = notes;
         c.titleFields = normalizeTitleFields(modalTitleFieldsDraft);
+        c.groupByTester = groupByTester;
+        c.testers = testers;
         // Only a date that was already set and actually changes counts as "moved" — picking the
         // first estimate isn't a move yet, nothing to compare it against.
         if (c.plannedStartDate && plannedStart !== c.plannedStartDate) {
@@ -6185,6 +6289,8 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       nc.notes = notes;
       nc.titleFields = normalizeTitleFields(modalTitleFieldsDraft);
       nc.plannedStartDate = plannedStart;
+      nc.groupByTester = groupByTester;
+      nc.testers = testers;
       state.cycles.unshift(nc);
     }
     closeCycleModal();
@@ -6907,6 +7013,24 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     input.value = '';
     renderModalTitleFields();
   };
+  document.getElementById('btnModalAddTester').onclick = function () {
+    var input = document.getElementById('modalNewTester');
+    var name = (input.value || '').trim();
+    if (!name) return;
+    if (modalTestersDraft.indexOf(name) === -1) modalTestersDraft.push(name);
+    input.value = '';
+    renderModalTesters();
+  };
+  document.getElementById('modalTestersList').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-remove-modal-tester]');
+    if (!btn) return;
+    var name = btn.getAttribute('data-remove-modal-tester');
+    modalTestersDraft = modalTestersDraft.filter(function (n) { return n !== name; });
+    renderModalTesters();
+  });
+  document.getElementById('modalNewTester').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btnModalAddTester').click(); }
+  });
   document.getElementById('cycleModal').addEventListener('click', function (e) {
     if (e.target.id === 'cycleModal') closeCycleModal();
   });
@@ -7054,7 +7178,14 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     }
   });
 
-  document.getElementById('btnAdd').onclick = addTx;
+  document.getElementById('btnAdd').onclick = function () { addTx(); };
+  document.getElementById('btnAddTester').onclick = function () {
+    if (!activeCycleId) return;
+    openCycleModal(activeCycleId);
+    var mg = document.getElementById('modalTesterGroupDetails');
+    if (mg) mg.open = true;
+    setTimeout(function () { document.getElementById('modalNewTester').focus(); }, 0);
+  };
   document.getElementById('displayName').oninput = function (e) {
     identity.name = e.target.value;
     persistIdentity();
@@ -7149,6 +7280,12 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       e.preventDefault(); e.stopPropagation();
       var mt = getTx(mr.getAttribute('data-markread'));
       if (mt && markChatRead(mt.chat, chatKey('tx', mt.id))) { renderSummary(); renderList(); }
+      return;
+    }
+    var addForTester = e.target.closest('[data-add-tx-for-tester]');
+    if (addForTester) {
+      e.preventDefault(); e.stopPropagation();
+      addTx(addForTester.getAttribute('data-add-tx-for-tester'));
       return;
     }
     var openBtn = e.target.closest('[data-open]');
