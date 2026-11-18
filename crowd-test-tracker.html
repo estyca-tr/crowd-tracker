@@ -470,6 +470,12 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
 .cycle-card h3 { margin: 0; font-size: 1.05rem; font-weight: 750; overflow-wrap: anywhere; }
 .cycle-meta { color: var(--muted); font-size: .82rem; display: flex; flex-wrap: wrap; gap: 8px; }
 .planned-start-row { margin-top: 2px; }
+.group-toggle-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.toggle.group-toggle { width: 36px; height: 22px; background: #cbd5e1; flex-shrink: 0; }
+.toggle.group-toggle::after { width: 16px; height: 16px; top: 3px; }
+.toggle.group-toggle.on { background: var(--accent); }
+.toggle.group-toggle.on::after { inset-inline-start: 17px; }
+.group-toggle-label { font-size: .82rem; font-weight: 650; color: var(--text); }
 .planned-start-badge {
   font: inherit; font-weight: 700; font-size: .95rem; line-height: 1.3;
   color: var(--info); background: var(--info-bg); border: 1px solid #bae6fd;
@@ -1166,13 +1172,6 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
           <div class="cycle-brief-hint">Stored on the cycle as titleFields. Configure fully inside the cycle too.</div>
         </div>
       </details>
-      <div class="field">
-        <label style="display:flex;align-items:center;gap:8px;font-weight:600">
-          <input id="cycleGroupByTester" type="checkbox" />
-          Group transactions by tester instead of one flat list
-        </label>
-        <div class="cycle-brief-hint">Testers are added inside the cycle itself (next to “+ Add transaction”) once this is on.</div>
-      </div>
       <div class="row-btns">
         <button type="button" class="btn btn-primary" id="cycleModalSave">Save</button>
         <button type="button" class="btn" id="cycleModalCancel">Cancel</button>
@@ -2431,14 +2430,17 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       '</div></article>';
   }
 
-  var testerGroupOpen = {}; // tester name -> explicitly collapsed by the user (default open)
-  /** Recurring cycles: one row per tester, holding all the test cases THEY run, in the exact
-   *  order they run them (list position = execution order — no separate field to keep in sync).
-   *  Reported: "אני מנסה להבין ... שיהיה את האפשרות להוסיף טסטר ובתוכו להוסיף טרנזקציות". Opt-in
-   *  per cycle (c.groupByTester) so a normal transaction-oriented cycle is unaffected. */
+  var testerGroupOpen = {}; // tester name -> explicitly expanded by the user (default collapsed)
+  /** A cycle can group its transactions by tester: one row per tester, holding all the test
+   *  cases THEY run, in the exact order they run them (list position = execution order — no
+   *  separate field to keep in sync). Reported: "אם הכל סגור, אני רואה רק טסטר, טסטר, טסטר,
+   *  טסטר, פותחת טסטר מסוים, רואה תחתיו טרנזקציות" — collapsed by default, so the whole-cycle
+   *  view is just a list of names; opening one reveals its test cases. Opt-in per cycle
+   *  (c.groupByTester, toggled right on the cycle's own card) so a normal transaction-oriented
+   *  cycle is unaffected. */
   function testerGroupHtml(name, rows) {
     var label = name || 'Unassigned';
-    var open = testerGroupOpen[name || '__unassigned__'] !== false;
+    var open = testerGroupOpen[name || '__unassigned__'] === true;
     return '<details class="tester-group" data-tester-group="' + esc(name) + '"' + (open ? ' open' : '') + '>' +
       '<summary><span class="tester-group-name">' + esc(label) + '</span>' +
       '<span class="tester-group-count">' + rows.length + '</span>' +
@@ -6098,6 +6100,10 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         '<span>Created ' + esc(formatDate(c.createdAt)) + '</span>' +
         (txWaiting ? '<button type="button" class="badge badge-chat-wait has-count" data-open-cycle-filter="' + esc(c.id) + '" title="Open this cycle filtered to the waiting transactions">💬 ' + txWaiting + ' transaction' + (txWaiting === 1 ? '' : 's') + ' waiting</button>' : '') +
         '</div>' +
+        '<div class="group-toggle-row">' +
+        '<button type="button" class="toggle group-toggle' + (c.groupByTester ? ' on' : '') + '" data-toggle-group-by-tester="' + esc(c.id) + '" role="switch" aria-checked="' + (c.groupByTester ? 'true' : 'false') + '" title="Switch between a flat transaction list and grouping by tester"></button>' +
+        '<span class="group-toggle-label">' + (c.groupByTester ? 'Grouped by tester' : 'Flat transaction list') + '</span>' +
+        '</div>' +
         '<div class="planned-start-row">' +
         (c.plannedStartDate
           ? '<button type="button" class="planned-start-badge" data-edit-cycle="' + esc(c.id) + '" title="' +
@@ -6222,7 +6228,6 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     }
     modalTitleFieldsDraft = normalizeTitleFields(c ? c.titleFields : DEFAULT_TITLE_FIELDS);
     renderModalTitleFields();
-    document.getElementById('cycleGroupByTester').checked = c ? !!c.groupByTester : false;
     var mb = document.getElementById('modalBriefDetails');
     var mt = document.getElementById('modalTitleDetails');
     if (mb) mb.open = false;
@@ -6246,7 +6251,6 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       return;
     }
     if (!state.cycles) state.cycles = [];
-    var groupByTester = !!document.getElementById('cycleGroupByTester').checked;
     var plannedStartMovedMsg = '';
     if (cycleModalEditId) {
       var c = state.cycles.find(function (x) { return x.id === cycleModalEditId; });
@@ -6254,7 +6258,6 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         c.name = name;
         c.notes = notes;
         c.titleFields = normalizeTitleFields(modalTitleFieldsDraft);
-        c.groupByTester = groupByTester;
         // Only a date that was already set and actually changes counts as "moved" — picking the
         // first estimate isn't a move yet, nothing to compare it against.
         if (c.plannedStartDate && plannedStart !== c.plannedStartDate) {
@@ -6273,7 +6276,6 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       nc.notes = notes;
       nc.titleFields = normalizeTitleFields(modalTitleFieldsDraft);
       nc.plannedStartDate = plannedStart;
-      nc.groupByTester = groupByTester;
       state.cycles.unshift(nc);
     }
     closeCycleModal();
@@ -7058,6 +7060,18 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     }
     // Same for the status dropdown — picking a status shouldn't also navigate into the cycle.
     if (e.target.closest('.cycle-status-select')) { e.stopPropagation(); return; }
+    var groupToggle = e.target.closest('[data-toggle-group-by-tester]');
+    if (groupToggle) {
+      e.preventDefault(); e.stopPropagation();
+      var gc = (state.cycles || []).find(function (x) { return x.id === groupToggle.getAttribute('data-toggle-group-by-tester'); });
+      if (gc) {
+        gc.groupByTester = !gc.groupByTester;
+        gc.updatedAt = new Date().toISOString();
+        persist();
+        renderCyclesList();
+      }
+      return;
+    }
     var tpRemove = e.target.closest('[data-action="testplan-upload-remove"]');
     if (tpRemove) {
       e.preventDefault(); e.stopPropagation();
@@ -7156,6 +7170,9 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       c.updatedAt = new Date().toISOString();
       persist();
     }
+    // Expand it immediately — otherwise it lands collapsed among the other (possibly many)
+    // tester groups and looks like nothing happened.
+    testerGroupOpen[name] = true;
     input.value = '';
     renderList();
   }
@@ -7263,6 +7280,17 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     if (addForTester) {
       e.preventDefault(); e.stopPropagation();
       addTx(addForTester.getAttribute('data-add-tx-for-tester'));
+      return;
+    }
+    // Remember whether the user explicitly expanded/collapsed a tester group, so the choice
+    // survives the next renderList() (e.g. right after adding a transaction into it) instead of
+    // resetting to the collapsed default every time.
+    var groupDetails = e.target.closest('[data-tester-group]');
+    if (groupDetails && (e.target.tagName === 'SUMMARY' || e.target.closest('summary'))) {
+      setTimeout(function () {
+        var key = groupDetails.getAttribute('data-tester-group') || '__unassigned__';
+        testerGroupOpen[key] = groupDetails.open;
+      }, 0);
       return;
     }
     var openBtn = e.target.closest('[data-open]');
