@@ -438,7 +438,11 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
   width: 20px; height: 20px; cursor: pointer; font-size: .7rem; line-height: 1; padding: 0;
 }
 .custom-role-chip button:hover { background: #fecaca; color: #b91c1c; }
-.testers-chip-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.add-tester-inline { display: inline-flex; gap: 6px; align-items: center; }
+.add-tester-inline input {
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  font-size: .85rem; min-width: 160px;
+}
 .role-add-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .role-add-row input {
   border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px;
@@ -1046,7 +1050,10 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   <div class="summary" id="summary"></div>
   <div class="actions-bar">
     <button class="btn btn-primary btn-lg" id="btnAdd" type="button">+ Add transaction</button>
-    <button class="btn btn-lg view-hidden" id="btnAddTester" type="button">+ Add tester</button>
+    <span class="add-tester-inline view-hidden" id="addTesterInline">
+      <input type="text" id="newTesterName" placeholder="Tester name" autocomplete="off" />
+      <button class="btn btn-sm" id="btnAddTester" type="button">+ Add tester</button>
+    </span>
     <span style="font-size:.8rem;color:var(--muted)">Opens a draft — close × without edits to discard</span>
   </div>
   <!-- Wrapper so the sticky .controls bar releases at the end of the list instead of
@@ -1159,21 +1166,13 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
           <div class="cycle-brief-hint">Stored on the cycle as titleFields. Configure fully inside the cycle too.</div>
         </div>
       </details>
-      <details class="cycle-collapsible" id="modalTesterGroupDetails">
-        <summary>Group by tester (recurring cycles)</summary>
-        <div class="cycle-collapsible-body">
-          <label style="display:flex;align-items:center;gap:8px;font-weight:600">
-            <input id="cycleGroupByTester" type="checkbox" />
-            Group transactions by tester instead of one flat list
-          </label>
-          <div class="cycle-brief-hint">For a recurring cycle where each tester runs several test cases in a set order — off leaves this cycle exactly as a normal transaction list.</div>
-          <div class="title-custom-row" style="margin-top:8px">
-            <input id="modalNewTester" type="text" placeholder="Tester name" autocomplete="off" />
-            <button type="button" class="btn btn-sm" id="btnModalAddTester">+ Add tester</button>
-          </div>
-          <div class="testers-chip-list" id="modalTestersList"></div>
-        </div>
-      </details>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:600">
+          <input id="cycleGroupByTester" type="checkbox" />
+          Group transactions by tester instead of one flat list
+        </label>
+        <div class="cycle-brief-hint">Testers are added inside the cycle itself (next to “+ Add transaction”) once this is on.</div>
+      </div>
       <div class="row-btns">
         <button type="button" class="btn btn-primary" id="cycleModalSave">Save</button>
         <button type="button" class="btn" id="cycleModalCancel">Cancel</button>
@@ -1961,20 +1960,6 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     el.innerHTML = html;
   }
 
-  var modalTestersDraft = [];
-  function renderModalTesters() {
-    var el = document.getElementById('modalTestersList');
-    if (!el) return;
-    if (!modalTestersDraft.length) {
-      el.innerHTML = '<span class="hint">No testers added yet.</span>';
-      return;
-    }
-    el.innerHTML = modalTestersDraft.map(function (name) {
-      return '<span class="custom-role-chip">' + esc(name) +
-        '<button type="button" data-remove-modal-tester="' + esc(name) + '" title="Remove tester">×</button></span>';
-    }).join('');
-  }
-
 
   function activeCycle() {
     return liveCyclesOf(state.cycles).find(function (c) { return c.id === activeCycleId; }) || null;
@@ -2483,8 +2468,8 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     var el = document.getElementById('list');
     var cycle = activeCycle();
     var grouping = !!(cycle && cycle.groupByTester);
-    var addTesterBtn = document.getElementById('btnAddTester');
-    if (addTesterBtn) addTesterBtn.classList.toggle('view-hidden', !grouping);
+    var addTesterInline = document.getElementById('addTesterInline');
+    if (addTesterInline) addTesterInline.classList.toggle('view-hidden', !grouping);
     if (!rows.length) {
       var total = getTxs().length;
       el.innerHTML = total
@@ -6238,14 +6223,10 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     modalTitleFieldsDraft = normalizeTitleFields(c ? c.titleFields : DEFAULT_TITLE_FIELDS);
     renderModalTitleFields();
     document.getElementById('cycleGroupByTester').checked = c ? !!c.groupByTester : false;
-    modalTestersDraft = (c && Array.isArray(c.testers)) ? c.testers.slice() : [];
-    renderModalTesters();
     var mb = document.getElementById('modalBriefDetails');
     var mt = document.getElementById('modalTitleDetails');
-    var mg = document.getElementById('modalTesterGroupDetails');
     if (mb) mb.open = false;
     if (mt) mt.open = false;
-    if (mg) mg.open = false;
     modal.classList.remove('view-hidden');
     setTimeout(function () { document.getElementById('cycleName').focus(); }, 0);
   }
@@ -6266,7 +6247,6 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     }
     if (!state.cycles) state.cycles = [];
     var groupByTester = !!document.getElementById('cycleGroupByTester').checked;
-    var testers = modalTestersDraft.slice();
     var plannedStartMovedMsg = '';
     if (cycleModalEditId) {
       var c = state.cycles.find(function (x) { return x.id === cycleModalEditId; });
@@ -6275,7 +6255,6 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         c.notes = notes;
         c.titleFields = normalizeTitleFields(modalTitleFieldsDraft);
         c.groupByTester = groupByTester;
-        c.testers = testers;
         // Only a date that was already set and actually changes counts as "moved" — picking the
         // first estimate isn't a move yet, nothing to compare it against.
         if (c.plannedStartDate && plannedStart !== c.plannedStartDate) {
@@ -6295,7 +6274,6 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       nc.titleFields = normalizeTitleFields(modalTitleFieldsDraft);
       nc.plannedStartDate = plannedStart;
       nc.groupByTester = groupByTester;
-      nc.testers = testers;
       state.cycles.unshift(nc);
     }
     closeCycleModal();
@@ -7018,24 +6996,6 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     input.value = '';
     renderModalTitleFields();
   };
-  document.getElementById('btnModalAddTester').onclick = function () {
-    var input = document.getElementById('modalNewTester');
-    var name = (input.value || '').trim();
-    if (!name) return;
-    if (modalTestersDraft.indexOf(name) === -1) modalTestersDraft.push(name);
-    input.value = '';
-    renderModalTesters();
-  };
-  document.getElementById('modalTestersList').addEventListener('click', function (e) {
-    var btn = e.target.closest('[data-remove-modal-tester]');
-    if (!btn) return;
-    var name = btn.getAttribute('data-remove-modal-tester');
-    modalTestersDraft = modalTestersDraft.filter(function (n) { return n !== name; });
-    renderModalTesters();
-  });
-  document.getElementById('modalNewTester').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btnModalAddTester').click(); }
-  });
   document.getElementById('cycleModal').addEventListener('click', function (e) {
     if (e.target.id === 'cycleModal') closeCycleModal();
   });
@@ -7184,13 +7144,25 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   });
 
   document.getElementById('btnAdd').onclick = function () { addTx(); };
-  document.getElementById('btnAddTester').onclick = function () {
-    if (!activeCycleId) return;
-    openCycleModal(activeCycleId);
-    var mg = document.getElementById('modalTesterGroupDetails');
-    if (mg) mg.open = true;
-    setTimeout(function () { document.getElementById('modalNewTester').focus(); }, 0);
-  };
+  function addTesterInlineNow() {
+    var c = activeCycle();
+    if (!c) return;
+    var input = document.getElementById('newTesterName');
+    var name = (input.value || '').trim();
+    if (!name) return;
+    if (!Array.isArray(c.testers)) c.testers = [];
+    if (c.testers.indexOf(name) === -1) {
+      c.testers.push(name);
+      c.updatedAt = new Date().toISOString();
+      persist();
+    }
+    input.value = '';
+    renderList();
+  }
+  document.getElementById('btnAddTester').onclick = addTesterInlineNow;
+  document.getElementById('newTesterName').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); addTesterInlineNow(); }
+  });
   document.getElementById('displayName').oninput = function (e) {
     identity.name = e.target.value;
     persistIdentity();
@@ -7682,7 +7654,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   document.getElementById('btnJiraCsvHelp').addEventListener('click', function (e) { e.preventDefault(); document.getElementById('jiraCsvHelpModal').classList.remove('view-hidden'); });
   document.getElementById('btnJiraCsvHelpClose').addEventListener('click', function () { document.getElementById('jiraCsvHelpModal').classList.add('view-hidden'); });
   document.getElementById('jiraCsvHelpModal').addEventListener('click', function (e) { if (e.target === e.currentTarget) e.currentTarget.classList.add('view-hidden'); });
-  try { window.__crowdTestHooks = Object.assign(window.__crowdTestHooks || {}, { buildJiraCsv: buildJiraCsv, syncMergeFromRemote: syncMergeFromRemote, getState: function () { return state; }, sideCheck: isEstySide, renderAll: function () { renderAll(); } }); } catch (e) {}
+  try { window.__crowdTestHooks = Object.assign(window.__crowdTestHooks || {}, { buildJiraCsv: buildJiraCsv, syncMergeFromRemote: syncMergeFromRemote, getState: function () { return state; }, sideCheck: isEstySide, renderAll: function () { renderAll(); }, openCycleModal: openCycleModal }); } catch (e) {}
 
   document.getElementById('btnExportExcelCycle').onclick = function () { downloadExcelBackupForCycle(activeCycle()); };
   document.getElementById('btnExport').onclick = function () {
