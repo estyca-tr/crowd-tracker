@@ -6393,6 +6393,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   var syncApplyTimer = null;
   var syncSuppressPush = false;
   var syncLastError = '';
+  var lastKnownRemoteUpdatedAt = ''; // egress guard — see syncSubscribe()
   var syncConnecting = false;
 
   function loadSyncConfig() {
@@ -6718,6 +6719,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         updated_at: updatedAt
       }, { onConflict: 'id' });
       if (res.error) throw res.error;
+      lastKnownRemoteUpdatedAt = updatedAt; // our own echo won't trigger a wasted re-fetch
       setSyncStatus('live', 'Synced ' + new Date(updatedAt).toLocaleTimeString());
     } catch (err) {
       setSyncStatus('error', (err && err.message) || String(err));
@@ -6732,6 +6734,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       if (!opts.silent) setSyncStatus('syncing', 'Pulling…');
       var res = await supabaseClient.from('crowd_tracker').select('id,payload,updated_at').eq('id', docId).maybeSingle();
       if (res.error) throw res.error;
+      if (res.data && res.data.updated_at) lastKnownRemoteUpdatedAt = res.data.updated_at;
       return res.data || null;
     } catch (err) {
       setSyncStatus('error', (err && err.message) || String(err));
@@ -6834,9 +6837,16 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         schema: 'public',
         table: 'crowd_tracker',
         filter: 'id=eq.' + docId
-      }, function () {
-        // Always re-fetch full jsonb via REST — realtime bodies can be incomplete,
-        // which caused list badges from a prior apply while panel still had empty chat.
+      }, function (evt) {
+        // Egress guard: the realtime event ITSELF already carries the row's updated_at — a tiny
+        // field delivered over the websocket we're already paying for, at no extra cost. Every
+        // connected browser used to re-fetch the FULL jsonb payload (hundreds of KB, and
+        // growing) on every single change from ANYONE, including the echo of its own push —
+        // with N people on the board, one edit cost N full downloads. Comparing that free
+        // updated_at against what we already have skips the expensive re-fetch whenever nothing
+        // actually changed for us, which is most of the time once several clients are open.
+        var newUpdatedAt = evt && evt.new && evt.new.updated_at;
+        if (newUpdatedAt && newUpdatedAt === lastKnownRemoteUpdatedAt) return;
         clearTimeout(syncApplyTimer);
         syncApplyTimer = setTimeout(function () {
           syncMergeFromRemote({ fromRealtime: true, silent: true }).then(function (applied) {
@@ -7687,7 +7697,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   document.getElementById('btnJiraCsvHelp').addEventListener('click', function (e) { e.preventDefault(); document.getElementById('jiraCsvHelpModal').classList.remove('view-hidden'); });
   document.getElementById('btnJiraCsvHelpClose').addEventListener('click', function () { document.getElementById('jiraCsvHelpModal').classList.add('view-hidden'); });
   document.getElementById('jiraCsvHelpModal').addEventListener('click', function (e) { if (e.target === e.currentTarget) e.currentTarget.classList.add('view-hidden'); });
-  try { window.__crowdTestHooks = Object.assign(window.__crowdTestHooks || {}, { buildJiraCsv: buildJiraCsv, syncMergeFromRemote: syncMergeFromRemote, getState: function () { return state; }, sideCheck: isEstySide, renderAll: function () { renderAll(); }, openCycleModal: openCycleModal }); } catch (e) {}
+  try { window.__crowdTestHooks = Object.assign(window.__crowdTestHooks || {}, { buildJiraCsv: buildJiraCsv, syncMergeFromRemote: syncMergeFromRemote, syncSubscribe: syncSubscribe, syncPush: syncPush, getLastKnownRemoteUpdatedAt: function () { return lastKnownRemoteUpdatedAt; }, getState: function () { return state; }, sideCheck: isEstySide, renderAll: function () { renderAll(); }, openCycleModal: openCycleModal }); } catch (e) {}
 
   document.getElementById('btnExportExcelCycle').onclick = function () { downloadExcelBackupForCycle(activeCycle()); };
   document.getElementById('btnExport').onclick = function () {
