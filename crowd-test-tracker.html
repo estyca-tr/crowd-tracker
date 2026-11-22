@@ -2091,7 +2091,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         savedAt: new Date().toISOString()
       }));
       flashSaved(opts.fromRemote ? 'Updated from sync ✓' : 'Saved locally ✓');
-      if (!opts.fromRemote && !opts.skipSync) scheduleGithubPush();
+      if (!opts.fromRemote && !opts.skipSync) scheduleSyncPush();
     } catch (e) {
       alert('Local save failed. Try Export JSON.');
     }
@@ -4841,10 +4841,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   // The tracker calls RPCs with the same anon key Live sync uses: create_jira_request / get_jira_request.
   function jiraMyRecentJql(pk) { return JIRA_SITE + '/issues/?jql=' + encodeURIComponent('project = ' + pk + ' AND reporter = currentUser() ORDER BY created DESC'); }
   function jiraRecentJql(pk) { return JIRA_SITE + '/issues/?jql=' + encodeURIComponent('project = ' + pk + ' AND created >= -2h ORDER BY created DESC'); }
-  // syncStatus now reflects the GitHub document sync (see below), a separate concern from
-  // Supabase (kept only for Storage + the Jira relay) — relay readiness is just "is the
-  // Supabase client up", the same check videoResolverReady() already uses.
-  function relayReady() { return !!(supabaseClient && typeof supabaseClient.rpc === 'function'); }
+  function relayReady() { return !!(supabaseClient && syncStatus === 'live' && typeof supabaseClient.rpc === 'function'); }
 
   /* ---------- ⚡ Create in Jira: confirm step ----------
      Nothing is sent to Jira until the user approves this exact content. */
@@ -6388,130 +6385,6 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   var DEFAULT_SYNC_URL = 'https://luafmineuqfglrytfpvj.supabase.co';
   var DEFAULT_SYNC_ANON_KEY = 'sb_publishable_nSEWbIlHl1FdMKwO0P8mGQ_dXyPNLVI';
 
-  // ---------- GitHub-backed data sync ----------
-  // The Supabase free tier this board's live-sync (DB) relied on is going away. Rather than a
-  // full Postgres migration (which this single static-HTML app, with no backend of its own,
-  // can't talk to directly), the shared cycles/transactions/chat document now lives as one JSON
-  // file in its own small public GitHub repo — read via GitHub's API (no login needed) and
-  // written back with a token scoped ONLY to that repo's contents, embedded here so every
-  // browser syncs automatically with zero setup (same spirit as the Supabase anon key above:
-  // the repo and token are fixed on purpose — nobody should have to paste in credentials).
-  // Supabase STORAGE (video/test-plan/chat-attachment uploads) is untouched for now — it's a
-  // separate concern from this document sync and keeps working as long as that project exists.
-  var GITHUB_SYNC_OWNER = 'estyca-tr';
-  var GITHUB_SYNC_REPO = 'crowd-tracker-data';
-  var GITHUB_SYNC_PATH = 'data.json';
-  var GITHUB_SYNC_BRANCH = 'main';
-  var GITHUB_SYNC_TOKEN = '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';
-  var GITHUB_SYNC_POLL_MS = 20000;
-  var githubLastSha = null;
-  var githubPushTimer = null;
-  var githubPolling = false;
-
-  /** UTF-8-safe base64 encode/decode — plain atob/btoa only handle Latin1, and cycle notes/chat
-   *  routinely contain Hebrew text and emoji. The classic escape/unescape trick (not TextEncoder/
-   *  TextDecoder, which aren't available in every environment this runs in) works everywhere. */
-  function utf8ToBase64(str) {
-    return btoa(unescape(encodeURIComponent(str)));
-  }
-  function base64ToUtf8(b64) {
-    return decodeURIComponent(escape(atob(b64.replace(/\n/g, ''))));
-  }
-
-  function githubApiHeaders(extra) {
-    return Object.assign({
-      Authorization: 'Bearer ' + GITHUB_SYNC_TOKEN,
-      Accept: 'application/vnd.github+json'
-    }, extra || {});
-  }
-
-  /** Reads the shared document. Returns { payload, sha } — the sha is needed to write back
-   *  without clobbering a concurrent edit from someone else's browser. */
-  async function githubFetchDocument() {
-    var url = 'https://api.github.com/repos/' + GITHUB_SYNC_OWNER + '/' + GITHUB_SYNC_REPO +
-      '/contents/' + GITHUB_SYNC_PATH + '?ref=' + GITHUB_SYNC_BRANCH;
-    var res = await fetch(url, { headers: githubApiHeaders() });
-    if (!res.ok) throw new Error('GitHub read failed (' + res.status + ')');
-    var data = await res.json();
-    var payload = JSON.parse(base64ToUtf8(data.content));
-    return { payload: payload, sha: data.sha };
-  }
-
-  /** Writes the document. `sha` must be the sha of the version being replaced (omit only when
-   *  creating the file for the very first time) — GitHub rejects a stale sha with 409, which the
-   *  caller uses as the signal to re-pull, merge, and retry instead of silently overwriting. */
-  async function githubWriteDocument(payload, sha) {
-    var body = {
-      message: 'Sync update ' + new Date().toISOString(),
-      content: utf8ToBase64(JSON.stringify(payload)),
-      branch: GITHUB_SYNC_BRANCH
-    };
-    if (sha) body.sha = sha;
-    var url = 'https://api.github.com/repos/' + GITHUB_SYNC_OWNER + '/' + GITHUB_SYNC_REPO + '/contents/' + GITHUB_SYNC_PATH;
-    var res = await fetch(url, { method: 'PUT', headers: githubApiHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) });
-    if (res.status === 409) { var conflict = new Error('Someone else saved first — merging'); conflict.conflict = true; throw conflict; }
-    if (!res.ok) throw new Error('GitHub write failed (' + res.status + ')');
-    var data = await res.json();
-    return data.content.sha;
-  }
-
-  function scheduleGithubPush() {
-    if (syncSuppressPush) return;
-    clearTimeout(githubPushTimer);
-    githubPushTimer = setTimeout(function () { githubPush(); }, 450);
-  }
-
-  /** Pushes the current local state. On a write conflict (someone else saved in between), pulls
-   *  their version, merges it in via the same per-record merge every remote pull uses, and lets
-   *  that merge's own persist() call schedule the retry — never force-overwrites. */
-  async function githubPush() {
-    if (syncSuppressPush) return;
-    var payload = buildSyncPayload();
-    setSyncStatus('syncing', 'Pushing…');
-    try {
-      var sha = githubLastSha;
-      if (!sha) {
-        var current = await githubFetchDocument();
-        sha = current.sha;
-      }
-      githubLastSha = await githubWriteDocument(payload, sha);
-      setSyncStatus('live', 'Synced ' + new Date().toLocaleTimeString());
-    } catch (err) {
-      if (err && err.conflict) {
-        try {
-          var remote = await githubFetchDocument();
-          githubLastSha = remote.sha;
-          applyRemotePayload(remote.payload);
-          if (syncStatus !== 'error') setSyncStatus('live', 'Merged a concurrent update');
-        } catch (err2) {
-          setSyncStatus('error', (err2 && err2.message) || String(err2));
-        }
-        return;
-      }
-      setSyncStatus('error', (err && err.message) || String(err));
-    }
-  }
-
-  /** Polls for changes made elsewhere. No realtime push over GitHub's API, so this is what
-   *  stands in for it — runs on an interval, silently, in the background; nothing for the user
-   *  to trigger or notice beyond the sync pill. */
-  async function githubPoll(opts) {
-    opts = opts || {};
-    if (githubPolling) return;
-    githubPolling = true;
-    try {
-      if (!opts.silent) setSyncStatus('syncing', 'Checking for updates…');
-      var remote = await githubFetchDocument();
-      githubLastSha = remote.sha;
-      var applied = applyRemotePayload(remote.payload);
-      if (syncStatus !== 'error') setSyncStatus('live', applied ? 'Live update received' : ('Synced ' + new Date().toLocaleTimeString()));
-    } catch (err) {
-      setSyncStatus('error', (err && err.message) || String(err));
-    } finally {
-      githubPolling = false;
-    }
-  }
-
   var syncConfig = loadSyncConfig();
   var supabaseClient = null;
   var syncChannel = null;
@@ -6978,29 +6851,40 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       });
   }
 
-  /** Supabase is kept ONLY for Storage now (video/test-plan/chat-attachment uploads) — the
-   *  cycles/transactions/chat document itself syncs over GitHub (see above), so this no longer
-   *  drives the main sync pill or does any DB merge/subscribe. It fails silently (to the
-   *  console) if the Supabase project is unreachable — uploads just show their existing
-   *  "Needs Live sync connected" state in that case, same as always. */
   async function syncConnect() {
     if (syncConnecting) return;
+    syncUnsubscribe();
     supabaseClient = null;
-    if (!hasSyncCredentials()) return;
+    if (!hasSyncCredentials()) {
+      setSyncStatus('offline', 'Local only — add Supabase URL + anon key to sync');
+      return;
+    }
     var lib = getSupabaseLib();
-    if (!lib) { try { console.warn('supabase-js CDN failed to load (need network)'); } catch (e) {} return; }
+    if (!lib) {
+      setSyncStatus('error', 'supabase-js CDN failed to load (need network)');
+      return;
+    }
     syncConnecting = true;
+    setSyncStatus('syncing', 'Connecting…');
     try {
       supabaseClient = lib.createClient(syncConfig.url, syncConfig.anonKey, {
         auth: { persistSession: false, autoRefreshToken: false }
       });
+      await syncMergeFromRemote();
+      if (syncStatus !== 'error') {
+        syncSubscribe();
+        if (syncStatus !== 'error') setSyncStatus('live', 'Connected to ' + effectiveDocId());
+      }
     } catch (err) {
-      try { console.warn('Supabase storage connect failed', err); } catch (e) {}
-      supabaseClient = null;
+      setSyncStatus('error', (err && err.message) || String(err));
     } finally {
       syncConnecting = false;
-      // Uploads check supabaseClient readiness at render time — refresh once connecting is
-      // done so the test-plan/video/chat-attachment controls reflect it either way.
+      // syncMergeFromRemote() only re-renders when it actually applied a remote change — on a
+      // no-op merge (nothing to pull, e.g. a brand-new or already-matching doc) nothing redraws,
+      // so the test-plan/video upload buttons stay stuck showing their pre-connect disabled
+      // state ("Needs Live sync connected") even though supabaseClient is now set and uploads
+      // would actually work. Always refresh whatever's currently on screen once connecting is
+      // done, success or failure, so those controls reflect the real readiness state.
       renderAll();
     }
   }
@@ -7803,7 +7687,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   document.getElementById('btnJiraCsvHelp').addEventListener('click', function (e) { e.preventDefault(); document.getElementById('jiraCsvHelpModal').classList.remove('view-hidden'); });
   document.getElementById('btnJiraCsvHelpClose').addEventListener('click', function () { document.getElementById('jiraCsvHelpModal').classList.add('view-hidden'); });
   document.getElementById('jiraCsvHelpModal').addEventListener('click', function (e) { if (e.target === e.currentTarget) e.currentTarget.classList.add('view-hidden'); });
-  try { window.__crowdTestHooks = Object.assign(window.__crowdTestHooks || {}, { buildJiraCsv: buildJiraCsv, syncMergeFromRemote: syncMergeFromRemote, applyRemotePayload: applyRemotePayload, githubPoll: githubPoll, getState: function () { return state; }, sideCheck: isEstySide, renderAll: function () { renderAll(); }, openCycleModal: openCycleModal }); } catch (e) {}
+  try { window.__crowdTestHooks = Object.assign(window.__crowdTestHooks || {}, { buildJiraCsv: buildJiraCsv, syncMergeFromRemote: syncMergeFromRemote, getState: function () { return state; }, sideCheck: isEstySide, renderAll: function () { renderAll(); }, openCycleModal: openCycleModal }); } catch (e) {}
 
   document.getElementById('btnExportExcelCycle').onclick = function () { downloadExcelBackupForCycle(activeCycle()); };
   document.getElementById('btnExport').onclick = function () {
@@ -7865,7 +7749,12 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     syncDisconnect();
   };
   document.getElementById('btnSyncPull').onclick = function () {
-    githubPoll();
+    if (!hasSyncCredentials()) {
+      setSyncStatus('offline', 'Add URL + anon key first');
+      return;
+    }
+    if (!supabaseClient) syncConnect();
+    else syncMergeFromRemote();
   };
   // Persist settings fields on blur (without connecting)
   ['syncUrl','syncAnonKey','syncDocId','syncAccessCode'].forEach(function (id) {
@@ -7876,12 +7765,11 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
     });
   });
 
-  // The shared document always syncs over GitHub — fixed repo + token, nothing to configure,
-  // nothing for a brand-new browser to set up. Supabase (Storage only now) connects quietly
-  // alongside it for uploads, whenever its own credentials are present.
-  githubPoll();
-  setInterval(function () { githubPoll({ silent: true }); }, GITHUB_SYNC_POLL_MS);
-  if (hasSyncCredentials() && syncConfig.autoConnect) syncConnect();
+  if (hasSyncCredentials() && syncConfig.autoConnect) {
+    syncConnect();
+  } else {
+    setSyncStatus('offline', hasSyncCredentials() ? 'Disconnected' : 'Local only');
+  }
 })();
 
 </script>
