@@ -1650,7 +1650,8 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       uploadedVideoUrl: '', uploadedVideoName: '',
       crowdIssues: [], jiraBugs: [],
       notes: '',
-      tester: '', testSteps: '',
+      tester: '', testSteps: '', appVersion: '',
+      jiraOpened: '', jiraTicket: '',
       pendingBugTeam: '',
       triage: 'Pending', waitingOn: '', openQuestions: false,
       chat: [],
@@ -2440,10 +2441,20 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
    *  cycle is unaffected. */
   function testerGroupHtml(name, rows) {
     var label = name || 'Unassigned';
-    var open = testerGroupOpen[name || '__unassigned__'] === true;
+    var key = name || '__unassigned__';
+    var waitingCount = rows.filter(function (t) { return chatWaitingInfo(t).needed; }).length;
+    // Reported: "אני מפלטר לפי צאט שמחכה ולא רואים" — filtering to "Chat waiting" still left
+    // every tester group collapsed, so the 3 matches were invisible without opening each one by
+    // hand. A badge on the (closed-or-open) group header makes it visible either way; on top of
+    // that, a group with a real filter/search match auto-opens the first time, unless the user
+    // already explicitly chose to collapse it themselves this session.
+    var filterActive = filter !== 'all' || !!query.trim();
+    var manualChoice = testerGroupOpen[key];
+    var open = manualChoice === true || (manualChoice !== false && filterActive && rows.length > 0);
     return '<details class="tester-group" data-tester-group="' + esc(name) + '"' + (open ? ' open' : '') + '>' +
       '<summary><span class="tester-group-name">' + esc(label) + '</span>' +
       '<span class="tester-group-count">' + rows.length + '</span>' +
+      (waitingCount ? '<span class="badge badge-chat-wait has-count" title="Has a waiting chat">💬 ' + waitingCount + '</span>' : '') +
       (name ? '<button type="button" class="btn btn-primary" data-add-tx-for-tester="' + esc(name) + '" title="Add a test case for ' + esc(label) + '">+ Add transaction</button>' : '') +
       '</summary>' +
       (rows.length ? rows.map(txRowHtml).join('') : '<div class="empty" style="margin:6px 0 2px">No test cases yet for this tester.</div>') +
@@ -2509,6 +2520,44 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       return '<div class="field"><label>' + esc(label) + '</label><select id="' + id + '">' + fixedOptionsHtml(list, value) + '</select></div>';
     }
     return '<div class="field"><label>' + esc(label) + '</label><input id="' + id + '" type="' + (type || 'text') + '" value="' + esc(value || '') + '" autocomplete="off" /></div>';
+  }
+
+  /** Which eToro app version the tester used — with a datalist of every version already typed
+   *  anywhere in this cycle, so testers running several transactions on the same build just pick
+   *  it instead of retyping the exact number each time. */
+  function appVersionFieldHtml(t) {
+    var cycle = activeCycle();
+    var seen = {};
+    var known = [];
+    if (cycle) {
+      liveTxsOf(cycle).forEach(function (tx) {
+        var v = String(tx.appVersion || '').trim();
+        if (v && !seen[v]) { seen[v] = true; known.push(v); }
+      });
+      known.sort();
+    }
+    var options = known.map(function (v) { return '<option value="' + esc(v) + '"></option>'; }).join('');
+    return '<div class="field"><label for="fAppVersion">eToro App Version</label>' +
+      '<input id="fAppVersion" type="text" list="appVersionOptions" value="' + esc(t.appVersion || '') + '" autocomplete="off" />' +
+      '<datalist id="appVersionOptions">' + options + '</datalist>' +
+      '</div>';
+  }
+
+  /** Quick, visible-up-front note of whether a Jira bug was opened at all, and its ticket number
+   *  — separate from the full Jira-bug-template/creation flow further down (which only appears
+   *  once a bug card actually exists). Lets a "yes/no, and here's the number" answer be recorded
+   *  immediately, before going anywhere near "Create bug in Jira". */
+  function quickJiraFieldHtml(t) {
+    var val = t.jiraOpened || '';
+    return '<div class="field"><label for="fJiraOpened">🐞 Jira bug opened?</label>' +
+      '<select id="fJiraOpened">' +
+      '<option value="">— not decided yet —</option>' +
+      '<option value="Yes"' + (val === 'Yes' ? ' selected' : '') + '>Yes</option>' +
+      '<option value="No"' + (val === 'No' ? ' selected' : '') + '>No</option>' +
+      '</select></div>' +
+      (val === 'Yes'
+        ? '<div class="field"><label for="fJiraTicket">Jira ticket number</label><input id="fJiraTicket" type="text" value="' + esc(t.jiraTicket || '') + '" autocomplete="off" placeholder="e.g. PINT-1234" /></div>'
+        : '');
   }
 
   /** Quoted preview of the message being replied to, shown above a reply's own bubble. */
@@ -3353,6 +3402,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       acc('Chat', chatBlockHtml(t)) +
       acc('Details',
         '<div class="section"><div class="grid2">' +
+        quickJiraFieldHtml(t) +
         field('fTester', 'Tester', t.tester) +
         field('fUsername', 'eToro Username', t.username) +
         field('fMethod', 'Payment Method', t.paymentMethod) +
@@ -3361,6 +3411,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
         field('fCountry', 'Country', t.country) +
         field('fLocation', 'Location', t.location) +
         field('fDevice', 'Device', t.device) +
+        appVersionFieldHtml(t) +
         field('fTc', 'Test Case ID', t.testCaseId) +
         field('fWhitelist', 'Whitelisting', t.whitelisting, 'select-whitelisting') +
         field('fAmount', 'Transfer Amount + Currency', t.amountCurrency) +
@@ -3500,7 +3551,8 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       ['fResult','result'],['fCountry','country'],['fLocation','location'],
       ['fDevice','device'],['fTc','testCaseId'],['fWhitelist','whitelisting'],
       ['fAmount','amountCurrency'],['fTimestamp','timestamp'],['fVideo','videoLink'],
-      ['fNotes','notes'],['fTestSteps','testSteps']
+      ['fNotes','notes'],['fTestSteps','testSteps'],['fAppVersion','appVersion'],
+      ['fJiraOpened','jiraOpened'],['fJiraTicket','jiraTicket']
     ].forEach(function (pair) { bind(pair[0], pair[1]); });
 
     Array.prototype.forEach.call(panel.querySelectorAll('[data-ci-field]'), function (el) {
