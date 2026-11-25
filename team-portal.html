@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Team Portal — QA &amp; Automation</title>
+<style>
+:root {
+  --bg: #f3f5fa; --surface: #fff; --surface-2: #f8fafc;
+  --border: #e2e8f0; --border-strong: #cbd5e1;
+  --text: #0f172a; --muted: #64748b;
+  --accent: #4f46e5; --accent-soft: #eef2ff; --accent-hover: #4338ca;
+  --ok: #059669; --ok-bg: #ecfdf5; --warn: #d97706; --warn-bg: #fffbeb;
+  --bad: #dc2626; --bad-bg: #fef2f2; --info: #0284c7; --info-bg: #f0f9ff;
+  --pending: #64748b; --pending-bg: #f1f5f9;
+  --shadow: 0 1px 2px rgba(15,23,42,.05), 0 10px 28px rgba(15,23,42,.06);
+  --radius: 14px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; overflow-x: hidden; }
+body { margin: 0; font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.45; }
+button, input, select, textarea { font: inherit; }
+a { color: var(--accent); }
+.app { max-width: 1280px; margin: 0 auto; padding: 16px 16px 48px; }
+.topbar { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.brand h1 { margin: 0 0 4px; font-size: 1.35rem; font-weight: 750; letter-spacing: -.02em; }
+.brand .sub { color: var(--muted); font-size: .88rem; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn { appearance: none; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 10px; padding: 8px 12px; cursor: pointer; font-weight: 650; font-size: .88rem; transition: .15s; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
+.btn-danger { color: var(--bad); border-color: #fecaca; }
+.btn-sm { padding: 6px 10px; font-size: .82rem; border-radius: 8px; }
+.auth-pill { font-size: .78rem; font-weight: 700; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); }
+.auth-pill.live { background: var(--ok-bg); color: var(--ok); border-color: #a7f3d0; }
+.auth-pill.locked { background: var(--warn-bg); color: var(--warn); border-color: #fde68a; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.tab { border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 999px; padding: 8px 14px; cursor: pointer; font-weight: 700; font-size: .82rem; }
+.tab:hover { border-color: var(--border-strong); color: var(--text); }
+.tab.active { background: var(--accent-soft); border-color: #c7d2fe; color: var(--accent); }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; box-shadow: var(--shadow); cursor: pointer; text-align: right; font: inherit; width: 100%; transition: .12s; }
+.stat:hover { border-color: var(--border-strong); }
+.stat .n { font-size: 1.3rem; font-weight: 750; }
+.stat .l { color: var(--muted); font-size: .76rem; margin-top: 2px; font-weight: 650; }
+.controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.search-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.search { flex: 1; min-width: 200px; border: 1px solid var(--border); border-radius: 12px; padding: 11px 14px; background: var(--surface); outline: none; box-shadow: var(--shadow); }
+.search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 999px; padding: 7px 12px; cursor: pointer; font-weight: 650; font-size: .8rem; }
+.chip.active { background: var(--accent-soft); border-color: #c7d2fe; color: var(--accent); }
+.layout { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 1100px) {
+  .layout { grid-template-columns: 1fr minmax(400px, 520px); align-items: start; }
+  .panel.open { position: sticky; top: 12px; max-height: calc(100vh - 24px); }
+}
+.list { display: flex; flex-direction: column; gap: 6px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer; transition: .12s; }
+.card:hover { border-color: #c7d2fe; background: #fafbff; }
+.card.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.card-title { font-weight: 750; font-size: .92rem; word-break: break-word; }
+.card-meta { color: var(--muted); font-size: .76rem; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 9px; font-size: .72rem; font-weight: 700; white-space: nowrap; }
+.badge-ok { background: var(--ok-bg); color: var(--ok); }
+.badge-warn { background: var(--warn-bg); color: var(--warn); }
+.badge-bad { background: var(--bad-bg); color: var(--bad); }
+.badge-idle { background: var(--pending-bg); color: var(--pending); }
+.badge-info { background: var(--info-bg); color: var(--info); }
+.empty { text-align: center; color: var(--muted); padding: 36px 16px; background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); display: none; flex-direction: column; overflow: hidden; min-height: 0; }
+.panel.open { display: flex; }
+.panel-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; padding: 14px 16px; border-bottom: 1px solid var(--border); background: linear-gradient(180deg, #fafbff, #fff); }
+.panel-head h2 { margin: 0; font-size: 1.05rem; word-break: break-word; }
+.panel-head .close { border: none; background: var(--surface-2); width: 34px; height: 34px; border-radius: 10px; cursor: pointer; font-size: 1.1rem; color: var(--muted); }
+.panel-body { padding: 14px 16px 18px; overflow-y: auto; max-height: calc(100vh - 120px); display: flex; flex-direction: column; gap: 10px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: .76rem; font-weight: 700; color: var(--muted); }
+.field input, .field textarea, .field select { border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; background: #fff; outline: none; width: 100%; }
+.field.full { grid-column: 1 / -1; }
+.row-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.banner-warn { background: var(--warn-bg); border: 1px solid #fde68a; color: #92400e; border-radius: 12px; padding: 12px 14px; font-size: .88rem; font-weight: 650; margin-bottom: 12px; }
+.banner-demo { background: var(--info-bg); border: 1px solid #bae6fd; color: #0369a1; border-radius: 12px; padding: 10px 14px; font-size: .85rem; margin-bottom: 12px; }
+.auth-gate { position: fixed; inset: 0; z-index: 100; background: rgba(15,23,42,.55); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.auth-gate.hidden { display: none; }
+.auth-card { background: var(--surface); border-radius: 16px; padding: 24px; max-width: 420px; width: 100%; box-shadow: var(--shadow); }
+.auth-card h2 { margin: 0 0 8px; font-size: 1.15rem; }
+.auth-card p { color: var(--muted); font-size: .9rem; margin: 0 0 14px; }
+.howto { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+.howto summary { cursor: pointer; padding: 12px 14px; font-weight: 700; list-style: none; }
+.howto summary::-webkit-details-marker { display: none; }
+.howto .body { padding: 0 14px 14px; color: var(--muted); font-size: .9rem; }
+.md-preview { white-space: pre-wrap; word-break: break-word; font-size: .88rem; line-height: 1.5; background: var(--surface-2); border-radius: 10px; padding: 10px; border: 1px solid var(--border); }
+.history-list { font-size: .8rem; color: var(--muted); border-top: 1px solid var(--border); padding-top: 10px; margin-top: 6px; max-height: 180px; overflow-y: auto; }
+.history-list div { padding: 4px 0; border-bottom: 1px dashed var(--border); }
+.msg-err { color: var(--bad); font-size: .85rem; }
+.hidden { display: none !important; }
+@media (max-width: 1099px) {
+  .panel.open { position: fixed; inset: 0; z-index: 50; border-radius: 0; max-height: 100vh; }
+  body.panel-open { overflow: hidden; }
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+<div id="authGate" class="auth-gate">
+  <div class="auth-card">
+    <h2>כניסה לפורטל הצוות</h2>
+    <p>נדרשת התחברות עם אימייל <strong>@etoro.com</strong> או <strong>@etorocorp.com</strong> (magic link מ-Supabase Auth). גישה אנונימית חסומה ב-RLS.</p>
+    <div class="field" style="margin-bottom:10px">
+      <label for="authEmail">אימייל</label>
+      <input id="authEmail" type="email" placeholder="name@etoro.com" autocomplete="email" />
+    </div>
+    <button type="button" class="btn btn-primary" id="btnMagicLink" style="width:100%">שלח קישור התחברות</button>
+    <p id="authMsg" class="msg-err" style="margin-top:10px;min-height:1.2em"></p>
+  </div>
+</div>
+
+<div class="app" id="appRoot">
+  <div class="topbar">
+    <div class="brand">
+      <h1>פורטל צוות QA / Automation</h1>
+      <div class="sub">מכשירים · משתמשי בדיקה · כרטיסים · אנשי קשר · whitelisting · נהלים · מי על מה</div>
+    </div>
+    <div class="toolbar">
+      <a class="btn btn-sm" href="crowd-test-tracker.html">← Crowd Test Tracker</a>
+      <span class="auth-pill locked" id="authPill" title="Auth">לא מחובר</span>
+      <button type="button" class="btn btn-sm btn-ghost" id="btnSignOut" style="display:none">יציאה</button>
+    </div>
+  </div>
+
+  <div id="demoBanner" class="banner-demo hidden">מצב תצוגה (דמו): שורות לדוגמה בלבד — לא נשמרות ב-Supabase. הסר <code>?preview=demo</code> לעבודה אמיתית.</div>
+
+  <details class="howto" id="setupHowto">
+    <summary>הגדרה (פעם אחת)</summary>
+    <div class="body">
+      <ol style="margin:0;padding-inline-start:1.2rem">
+        <li>הריצי <code>sql/team_portal.sql</code> ב-Supabase SQL Editor.</li>
+        <li>Authentication → Providers → Email: הפעילי magic link; Redirect URLs: <code>https://estyca-tr.github.io/crowd-tracker/team-portal.html</code> (+ localhost לפיתוח).</li>
+        <li>הדף משתמש באותו Supabase project כמו Crowd Tracker (URL + anon key מוטמעים).</li>
+      </ol>
+    </div>
+  </details>
+
+  <nav class="tabs" id="tabNav" aria-label="לשוניות"></nav>
+  <div id="tabBanner"></div>
+  <div class="controls" id="tabControls"></div>
+  <div class="layout">
+    <div id="listHost"><div class="list" id="recordList"></div></div>
+    <aside class="panel" id="sidePanel" aria-label="עריכה">
+      <div class="panel-head">
+        <h2 id="panelTitle">—</h2>
+        <button type="button" class="close" id="panelClose" aria-label="סגור">×</button>
+      </div>
+      <div class="panel-body" id="panelBody"></div>
+    </aside>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var DEFAULT_SYNC_URL = 'https://luafmineuqfglrytfpvj.supabase.co';
+  var DEFAULT_SYNC_ANON_KEY = 'sb_publishable_nSEWbIlHl1FdMKwO0P8mGQ_dXyPNLVI';
+  var ALLOWED_EMAIL_RE = /@(etoro\.com|etorocorp\.com)$/i;
+  var PREVIEW_DEMO = /\bpreview=demo\b/i.test(location.search);
+
+  var TABS = [
+    { id: 'home', label: 'דף הבית', table: null },
+    { id: 'devices', label: 'מכשירים', table: 'portal_devices', searchFields: ['device_name','model','asset_tag','current_holder','location_team','notes'] },
+    { id: 'test_users', label: 'משתמשי בדיקה', table: 'portal_test_users', searchFields: ['label','username_alias','country','purpose','notes'] },
+    { id: 'test_cards', label: 'כרטיסי בדיקה', table: 'portal_test_cards', searchFields: ['label','issuer','brand','last4','holder','notes'], banner: 'cards' },
+    { id: 'contacts', label: 'ספקים ואנשי קשר', table: 'portal_contacts', searchFields: ['name','company','role_title','contact_about','channel'] },
+    { id: 'whitelisting', label: 'סביבות ו-whitelisting', table: 'portal_whitelisting', searchFields: ['item','requested_by','notes'] },
+    { id: 'howtos', label: 'נהלים', table: 'portal_howtos', searchFields: ['title','body_md','link_url'] },
+    { id: 'assignments', label: 'מי על מה', table: 'portal_assignments', searchFields: ['person','week_label','focus_area','notes'] }
+  ];
+
+  var supabaseClient = null;
+  var sessionUser = null;
+  var activeTab = 'home';
+  var cache = {};
+  var deviceHistory = {};
+  var filterChip = '';
+  var searchQ = '';
+  var selectedId = null;
+  var draft = null;
+  var linkedUsers = [];
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function fmtDt(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleString('he-IL'); } catch (e) { return esc(iso); }
+  }
+
+  function simpleMd(md) {
+    var t = esc(md || '');
+    t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    return t.replace(/\n/g, '<br>');
+  }
+
+  function getSupabaseLib() {
+    if (typeof supabase !== 'undefined' && supabase.createClient) return supabase;
+    if (window.supabase && window.supabase.createClient) return window.supabase;
+    return null;
+  }
+
+  function initClient() {
+    var lib = getSupabaseLib();
+    if (!lib) return null;
+    return lib.createClient(DEFAULT_SYNC_URL, DEFAULT_SYNC_ANON_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+  }
+
+  function setAuthUi(signedIn, email) {
+    var gate = document.getElementById('authGate');
+    var pill = document.getElementById('authPill');
+    var btnOut = document.getElementById('btnSignOut');
+    if (signedIn) {
+      gate.classList.add('hidden');
+      pill.textContent = email || 'מחובר';
+      pill.className = 'auth-pill live';
+      pill.title = email || '';
+      btnOut.style.display = '';
+    } else {
+      if (!PREVIEW_DEMO) gate.classList.remove('hidden');
+      else gate.classList.add('hidden');
+      pill.textContent = PREVIEW_DEMO ? 'דמו' : 'לא מחובר';
+      pill.className = 'auth-pill' + (PREVIEW_DEMO ? ' live' : ' locked');
+      btnOut.style.display = 'none';
+    }
+    var demo = document.getElementById('demoBanner');
+    if (demo) demo.classList.toggle('hidden', !PREVIEW_DEMO || signedIn);
+  }
+
+  function emailAllowed(email) {
+    return ALLOWED_EMAIL_RE.test(String(email || '').trim());
+  }
+
+  async function ensureAuth() {
+    if (PREVIEW_DEMO && !sessionUser) return true;
+    return !!sessionUser;
+  }
+
+  function demoRows(table) {
+    var tag = '[דוגמה] ';
+    if (table === 'portal_devices') return [{
+      id: 'demo-d1', device_name: tag + 'iPhone QA', model: 'iPhone 14', os_name: 'iOS', os_version: '17.2',
+      device_type: 'phone', asset_tag: 'ET-QA-001', current_holder: 'Dana', held_since: '2026-11-10',
+      location_team: 'Payments QA', status: 'in_use', notes: 'לדוגמה בלבד', owner: 'demo', updated_at: new Date().toISOString(), last_changed_by: 'demo@etoro.com'
+    }];
+    if (table === 'portal_test_users') return [{
+      id: 'demo-u1', label: tag + 'STG UK basic', username_alias: 'qa_uk_01', environment: 'STG', country: 'UK',
+      account_type: 'Retail', flags: ['KYC done', 'IBAN'], current_user_label: 'Ron', purpose: 'Open Banking', notes: '',
+      owner: 'demo', updated_at: new Date().toISOString(), last_changed_by: 'demo@etoro.com'
+    }];
+    if (table === 'portal_test_cards') return [{
+      id: 'demo-c1', label: tag + 'Visa STG', issuer: 'Demo Bank', brand: 'Visa', card_type: 'debit',
+      country: 'UK', currency: 'GBP', environment: 'STG', last4: '4242', expiry_month: 12, expiry_year: 2028,
+      holder: 'Test User', linked_test_user_id: null, details_location: 'team password vault', notes: '4 ספרות בלבד',
+      owner: 'demo', updated_at: new Date().toISOString(), last_changed_by: 'demo@etoro.com'
+    }];
+    if (table === 'portal_contacts') return [{
+      id: 'demo-p1', name: tag + 'Applause PM', company: 'Applause', role_title: 'PM', contact_about: 'Crowd cycles',
+      channel: 'Slack #applause-payments', notes: '', owner: 'demo', updated_at: new Date().toISOString(), last_changed_by: 'demo@etoro.com'
+    }];
+    if (table === 'portal_whitelisting') return [{
+      id: 'demo-w1', item: tag + 'qa_uk_01', environment: 'STG', status: 'pending', requested_by: 'Esty',
+      requested_date: '2026-11-15', notes: '', owner: 'demo', updated_at: new Date().toISOString(), last_changed_by: 'demo@etoro.com'
+    }];
+    if (table === 'portal_howtos') return [{
+      id: 'demo-h1', title: tag + 'איך לבקש whitelisting', body_md: '**שלבים:**\n1. פתחו טיקט\n2. עדכנו בטאב whitelisting', link_url: '',
+      owner: 'demo', updated_at: new Date().toISOString(), last_changed_by: 'demo@etoro.com'
+    }];
+    if (table === 'portal_assignments') return [{
+      id: 'demo-a1', person: tag + 'Maya', week_label: '2026-W46', focus_area: 'Apple Pay deposits', availability: 'partial', notes: '',
+      owner: 'demo', updated_at: new Date().toISOString(), last_changed_by: 'demo@etoro.com'
+    }];
+    return [];
+  }
+
+  async function loadTable(table) {
+    if (PREVIEW_DEMO && !sessionUser) {
+      cache[table] = demoRows(table);
+      return cache[table];
+    }
+    if (!supabaseClient || !sessionUser) return [];
+    var res = await supabaseClient.from(table).select('*').order('updated_at', { ascending: false });
+    if (res.error) throw res.error;
+    cache[table] = res.data || [];
+    return cache[table];
+  }
+
+  async function loadDeviceHistory(deviceId) {
+    if (PREVIEW_DEMO && !sessionUser) { deviceHistory[deviceId] = []; return []; }
+    if (!supabaseClient) return [];
+    var res = await supabaseClient.from('portal_device_history').select('*').eq('device_id', deviceId).order('created_at', { ascending: false }).limit(30);
+    if (!res.error) deviceHistory[deviceId] = res.data || [];
+    return deviceHistory[deviceId] || [];
+  }
+
+  async function refreshActiveData() {
+    var tab = TABS.find(function (t) { return t.id === activeTab; });
+    if (!tab || !tab.table) {
+      for (var i = 1; i < TABS.length; i++) {
+        try { await loadTable(TABS[i].table); } catch (e) { /* ignore for dashboard partial */ }
+      }
+      renderAll();
+      return;
+    }
+    await loadTable(tab.table);
+    if (tab.table === 'portal_test_cards' || tab.table === 'portal_devices') {
+      try { linkedUsers = await loadTable('portal_test_users'); } catch (e2) {}
+    }
+    renderAll();
+  }
+
+  function rowsForTab() {
+    var tab = TABS.find(function (t) { return t.id === activeTab; });
+    if (!tab || !tab.table) return [];
+    var rows = cache[tab.table] || [];
+    var q = searchQ.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter(function (r) {
+        return (tab.searchFields || []).some(function (f) {
+          var v = r[f];
+          if (Array.isArray(v)) return v.join(' ').toLowerCase().indexOf(q) >= 0;
+          return String(v || '').toLowerCase().indexOf(q) >= 0;
+        });
+      });
+    }
+    if (filterChip) {
+      rows = rows.filter(function (r) {
+        if (tab.table === 'portal_devices') return r.status === filterChip || r.device_type === filterChip;
+        if (tab.table === 'portal_test_users') return r.environment === filterChip;
+        if (tab.table === 'portal_whitelisting') return r.status === filterChip;
+        if (tab.table === 'portal_assignments') return r.availability === filterChip;
+        if (tab.table === 'portal_test_cards') return r.environment === filterChip;
+        return true;
+      });
+    }
+    return rows;
+  }
+
+  function deviceStatusBadge(st) {
+    var map = { available: ['badge-ok', 'פנוי'], in_use: ['badge-info', 'בשימוש'], broken: ['badge-bad', 'תקול'], lost: ['badge-bad', 'אבוד'] };
+    var m = map[st] || ['badge-idle', st];
+    return '<span class="badge ' + m[0] + '">' + esc(m[1]) + '</span>';
+  }
+
+  function cardHtml(row) {
+    var tab = TABS.find(function (t) { return t.id === activeTab; });
+    if (!tab || !tab.table) return '';
+    var title = '', meta = [], badges = '';
+    if (tab.table === 'portal_devices') {
+      title = (row.device_name || row.model || 'מכשיר') + (row.asset_tag ? ' · ' + row.asset_tag : '');
+      meta = [row.os_name + ' ' + row.os_version, row.current_holder ? 'אצל: ' + row.current_holder : 'אין מחזיק', row.location_team];
+      badges = deviceStatusBadge(row.status);
+    } else if (tab.table === 'portal_test_users') {
+      title = row.label || row.username_alias || 'משתמש';
+      meta = [row.environment, row.country, row.account_type, (row.flags || []).join(', ')];
+    } else if (tab.table === 'portal_test_cards') {
+      title = (row.label || 'כרטיס') + ' ·••• ' + esc(row.last4);
+      meta = [row.brand, row.environment, row.currency, row.details_location];
+      badges = '<span class="badge badge-warn">4 ספרות בלבד</span>';
+    } else if (tab.table === 'portal_contacts') {
+      title = row.name || 'איש קשר';
+      meta = [row.company, row.role_title, row.channel];
+    } else if (tab.table === 'portal_whitelisting') {
+      title = row.item || 'פריט';
+      meta = [row.environment, row.requested_by, row.status];
+      var st = row.status;
+      badges = '<span class="badge ' + (st === 'done' ? 'badge-ok' : st === 'pending' ? 'badge-warn' : 'badge-idle') + '">' + esc(st) + '</span>';
+    } else if (tab.table === 'portal_howtos') {
+      title = row.title || 'נוהל';
+      meta = [row.link_url ? 'קישור חיצוני' : ''];
+    } else if (tab.table === 'portal_assignments') {
+      title = (row.person || '—') + ' · ' + (row.week_label || '');
+      meta = [row.focus_area, row.availability];
+    }
+    var audit = 'עודכן: ' + fmtDt(row.updated_at) + (row.last_changed_by ? ' · ' + esc(row.last_changed_by) : '');
+    return '<article class="card' + (selectedId === row.id ? ' active' : '') + '" data-id="' + esc(row.id) + '" role="button" tabindex="0">' +
+      '<div class="card-title">' + esc(title) + ' ' + badges + '</div>' +
+      '<div class="card-meta">' + meta.filter(Boolean).map(function (m) { return '<span>' + esc(m) + '</span>'; }).join('') + '</div>' +
+      '<div class="card-meta" style="margin-top:6px">' + audit + '</div></article>';
+  }
+
+  function renderDashboard() {
+    var counts = TABS.filter(function (t) { return t.table; }).map(function (t) {
+      var n = (cache[t.table] || []).length;
+      return '<button type="button" class="stat" data-goto="' + t.id + '"><div class="n">' + n + '</div><div class="l">' + esc(t.label) + '</div></button>';
+    }).join('');
+    var inUse = (cache.portal_devices || []).filter(function (d) { return d.status === 'in_use'; });
+    var pendingWl = (cache.portal_whitelisting || []).filter(function (w) { return w.status === 'pending' || w.status === 'requested'; });
+    var recent = [];
+    TABS.forEach(function (t) {
+      if (!t.table) return;
+      (cache[t.table] || []).forEach(function (r) { recent.push({ tab: t.label, row: r }); });
+    });
+    recent.sort(function (a, b) { return Date.parse(b.row.updated_at) - Date.parse(a.row.updated_at); });
+    recent = recent.slice(0, 8);
+    return '<div class="summary">' + counts + '</div>' +
+      '<h3 style="margin:12px 0 6px;font-size:.9rem">מכשירים בשימוש</h3>' +
+      (inUse.length ? '<div class="list">' + inUse.map(function (d) {
+        return '<div class="card" style="cursor:default"><div class="card-title">' + esc(d.device_name) + '</div><div class="card-meta"><span>' + esc(d.current_holder) + '</span><span>' + esc(d.location_team) + '</span></div></div>';
+      }).join('') + '</div>' : '<div class="empty">אין מכשירים מסומנים בשימוש</div>') +
+      '<h3 style="margin:16px 0 6px;font-size:.9rem">Whitelisting ממתין</h3>' +
+      (pendingWl.length ? '<div class="list">' + pendingWl.map(function (w) {
+        return '<div class="card" style="cursor:default"><div class="card-title">' + esc(w.item) + '</div><div class="card-meta"><span>' + esc(w.environment) + '</span><span>' + esc(w.status) + '</span></div></div>';
+      }).join('') + '</div>' : '<div class="empty">אין בקשות ממתינות</div>') +
+      '<h3 style="margin:16px 0 6px;font-size:.9rem">שינויים אחרונים</h3><div class="list">' +
+      (recent.length ? recent.map(function (x) {
+        var title = x.row.label || x.row.device_name || x.row.title || x.row.name || x.row.item || x.row.person || x.row.id;
+        return '<div class="card" style="cursor:default"><div class="card-title">' + esc(x.tab) + ' · ' + esc(title) + '</div><div class="card-meta">' + fmtDt(x.row.updated_at) + ' · ' + esc(x.row.last_changed_by) + '</div></div>';
+      }).join('') : '<div class="empty">אין נתונים עדיין — התחילו להוסיף רשומות בלשוניות.</div>') +
+      '</div>';
+  }
+
+  function fieldInput(name, label, value, opts) {
+    opts = opts || {};
+    var full = opts.full ? ' full' : '';
+    if (opts.type === 'textarea') {
+      return '<div class="field' + full + '"><label>' + esc(label) + '</label><textarea data-f="' + esc(name) + '" rows="' + (opts.rows || 3) + '">' + esc(value) + '</textarea></div>';
+    }
+    if (opts.type === 'select') {
+      var optsHtml = (opts.options || []).map(function (o) {
+        var v = o.value != null ? o.value : o;
+        var l = o.label != null ? o.label : o;
+        return '<option value="' + esc(v) + '"' + (String(value) === String(v) ? ' selected' : '') + '>' + esc(l) + '</option>';
+      }).join('');
+      return '<div class="field' + full + '"><label>' + esc(label) + '</label><select data-f="' + esc(name) + '">' + optsHtml + '</select></div>';
+    }
+    var extra = '';
+    if (name === 'last4') extra = ' inputmode="numeric" maxlength="4" pattern="\\d{4}"';
+    return '<div class="field' + full + '"><label>' + esc(label) + '</label><input data-f="' + esc(name) + '" type="' + (opts.type || 'text') + '" value="' + esc(value) + '"' + extra + ' /></div>';
+  }
+
+  function emptyDraft(table) {
+    if (table === 'portal_devices') return { device_name:'',model:'',os_name:'',os_version:'',device_type:'phone',asset_tag:'',current_holder:'',held_since:null,location_team:'',status:'available',notes:'' };
+    if (table === 'portal_test_users') return { label:'',username_alias:'',environment:'STG',country:'',account_type:'',flags:[],current_user_label:'',purpose:'',notes:'' };
+    if (table === 'portal_test_cards') return { label:'',issuer:'',brand:'',card_type:'debit',country:'',currency:'',environment:'STG',last4:'',expiry_month:null,expiry_year:null,holder:'',linked_test_user_id:null,details_location:'',notes:'' };
+    if (table === 'portal_contacts') return { name:'',company:'',role_title:'',contact_about:'',channel:'',notes:'' };
+    if (table === 'portal_whitelisting') return { item:'',environment:'STG',status:'requested',requested_by:'',requested_date:null,notes:'' };
+    if (table === 'portal_howtos') return { title:'',body_md:'',link_url:'' };
+    if (table === 'portal_assignments') return { person:'',week_label:'',focus_area:'',availability:'available',notes:'' };
+    return {};
+  }
+
+  function renderPanel() {
+    var panel = document.getElementById('sidePanel');
+    var body = document.getElementById('panelBody');
+    var title = document.getElementById('panelTitle');
+    if (!draft) {
+      panel.classList.remove('open');
+      document.body.classList.remove('panel-open');
+      return;
+    }
+    panel.classList.add('open');
+    document.body.classList.add('panel-open');
+    title.textContent = draft._isNew ? 'רשומה חדשה' : 'עריכה';
+    var table = draft._table;
+    var d = draft;
+    var html = '<div class="grid2">';
+    if (table === 'portal_devices') {
+      html += fieldInput('device_name','שם מכשיר',d.device_name) + fieldInput('model','דגם',d.model);
+      html += fieldInput('os_name','OS',d.os_name) + fieldInput('os_version','גרסת OS',d.os_version);
+      html += fieldInput('device_type','סוג',d.device_type,{type:'select',options:[{value:'phone',label:'phone'},{value:'tablet',label:'tablet'}]});
+      html += fieldInput('asset_tag','Asset tag',d.asset_tag);
+      html += fieldInput('current_holder','מחזיק נוכחי',d.current_holder) + fieldInput('held_since','מאז (תאריך)',d.held_since||'',{type:'date'});
+      html += fieldInput('location_team','מיקום / צוות',d.location_team,{full:true});
+      html += fieldInput('status','סטטוס',d.status,{type:'select',options:['available','in_use','broken','lost']});
+      html += fieldInput('notes','הערות',d.notes,{type:'textarea',full:true});
+      html += '</div><div class="row-btns" style="margin-top:8px">' +
+        '<button type="button" class="btn btn-sm" data-act="take">קח מכשיר</button>' +
+        '<button type="button" class="btn btn-sm" data-act="return">החזר מכשיר</button></div>';
+      html += '<div class="history-list" id="devHist">טוען היסטוריה…</div>';
+    } else if (table === 'portal_test_users') {
+      html += fieldInput('label','תווית',d.label,{full:true});
+      html += fieldInput('username_alias','Username (אופציונלי)',d.username_alias);
+      html += fieldInput('environment','סביבה',d.environment,{type:'select',options:['STG','INT','PROD']});
+      html += fieldInput('country','מדינה',d.country) + fieldInput('account_type','סוג חשבון',d.account_type);
+      html += fieldInput('flags','דגלים (מופרד בפסיק)',(d.flags||[]).join(', '),{full:true});
+      html += fieldInput('current_user_label','משתמש נוכחי',d.current_user_label) + fieldInput('purpose','מטרה',d.purpose);
+      html += fieldInput('notes','הערות',d.notes,{type:'textarea',full:true});
+    } else if (table === 'portal_test_cards') {
+      html += fieldInput('label','תווית',d.label,{full:true});
+      html += fieldInput('issuer','מנפיק / בנק',d.issuer) + fieldInput('brand','מותג',d.brand);
+      html += fieldInput('card_type','סוג',d.card_type,{type:'select',options:['debit','credit','virtual']});
+      html += fieldInput('country','מדינה',d.country) + fieldInput('currency','מטבע',d.currency);
+      html += fieldInput('environment','סביבה',d.environment,{type:'select',options:['STG','INT','PROD']});
+      html += fieldInput('last4','4 ספרות אחרונות בלבד',d.last4);
+      html += fieldInput('expiry_month','חודש תפוגה',d.expiry_month||'',{type:'number'}) + fieldInput('expiry_year','שנת תפוגה',d.expiry_year||'',{type:'number'});
+      html += fieldInput('holder','בעל הכרטיס',d.holder);
+      var luOpts = [{value:'',label:'—'}].concat((linkedUsers||[]).map(function (u) { return { value: u.id, label: u.label || u.username_alias || u.id }; }));
+      html += fieldInput('linked_test_user_id','משתמש בדיקה מקושר',d.linked_test_user_id||'',{type:'select',options:luOpts,full:true});
+      html += fieldInput('details_location','איפה השמורים הפרטים המלאים',d.details_location,{full:true});
+      html += fieldInput('notes','הערות',d.notes,{type:'textarea',full:true});
+    } else if (table === 'portal_contacts') {
+      html += fieldInput('name','שם',d.name) + fieldInput('company','חברה / צוות',d.company);
+      html += fieldInput('role_title','תפקיד',d.role_title,{full:true});
+      html += fieldInput('contact_about','לגבי מה לפנות',d.contact_about,{type:'textarea',full:true});
+      html += fieldInput('channel','ערוץ (Slack/Teams/email)',d.channel,{full:true});
+      html += fieldInput('notes','הערות',d.notes,{type:'textarea',full:true});
+    } else if (table === 'portal_whitelisting') {
+      html += fieldInput('item','פריט',d.item,{full:true});
+      html += fieldInput('environment','סביבה',d.environment,{type:'select',options:['STG','INT','PROD']});
+      html += fieldInput('status','סטטוס',d.status,{type:'select',options:['requested','pending','done']});
+      html += fieldInput('requested_by','התבקש על ידי',d.requested_by) + fieldInput('requested_date','תאריך',d.requested_date||'',{type:'date'});
+      html += fieldInput('notes','הערות',d.notes,{type:'textarea',full:true});
+    } else if (table === 'portal_howtos') {
+      html += fieldInput('title','כותרת',d.title,{full:true});
+      html += fieldInput('body_md','גוף (Markdown קצר)',d.body_md,{type:'textarea',full:true,rows:8});
+      html += fieldInput('link_url','קישור',d.link_url,{full:true});
+      html += '<div class="field full"><label>תצוגה מקדימה</label><div class="md-preview">' + simpleMd(d.body_md) + '</div></div>';
+    } else if (table === 'portal_assignments') {
+      html += fieldInput('person','שם',d.person) + fieldInput('week_label','שבוע',d.week_label);
+      html += fieldInput('focus_area','מיקוד / פיצ\'ר',d.focus_area,{full:true});
+      html += fieldInput('availability','זמינות',d.availability,{type:'select',options:[{value:'available',label:'available'},{value:'partial',label:'partial'},{value:'not_available',label:'not available'}]});
+      html += fieldInput('notes','הערות',d.notes,{type:'textarea',full:true});
+    }
+    if (table !== 'portal_devices') html += '</div>';
+    if (!draft._isNew && d.owner) html += '<p style="font-size:.78rem;color:var(--muted);margin:0">owner: ' + esc(d.owner) + '</p>';
+    html += '<div class="row-btns" style="margin-top:12px">' +
+      '<button type="button" class="btn btn-primary btn-sm" id="btnSaveRow">שמירה</button>' +
+      (!draft._isNew ? '<button type="button" class="btn btn-sm btn-danger" id="btnDelRow">מחיקה</button>' : '') +
+      '</div>';
+    body.innerHTML = html;
+    if (table === 'portal_devices' && d.id) {
+      loadDeviceHistory(d.id).then(function (list) {
+        var el = document.getElementById('devHist');
+        if (!el) return;
+        if (!list.length) { el.textContent = 'אין היסטוריה עדיין.'; return; }
+        el.innerHTML = list.map(function (h) {
+          return '<div>' + esc(h.action) + ' · ' + esc(h.holder) + ' · ' + fmtDt(h.created_at) + ' · ' + esc(h.created_by) + (h.notes ? ' — ' + esc(h.notes) : '') + '</div>';
+        }).join('');
+      });
+    }
+    body.querySelectorAll('input,textarea,select').forEach(function (inp) {
+      inp.addEventListener('input', function () { readDraftFromForm(); });
+      inp.addEventListener('change', function () { readDraftFromForm(); if (table === 'portal_howtos') renderPanel(); });
+    });
+    body.querySelectorAll('[data-act]').forEach(function (btn) {
+      btn.addEventListener('click', function () { deviceQuickAction(btn.getAttribute('data-act')); });
+    });
+    var save = document.getElementById('btnSaveRow');
+    if (save) save.addEventListener('click', saveDraft);
+    var del = document.getElementById('btnDelRow');
+    if (del) del.addEventListener('click', deleteDraft);
+  }
+
+  function readDraftFromForm() {
+    if (!draft) return;
+    var body = document.getElementById('panelBody');
+    body.querySelectorAll('[data-f]').forEach(function (el) {
+      var f = el.getAttribute('data-f');
+      var v = el.value;
+      if (f === 'flags') draft.flags = v.split(/[,،]/).map(function (s) { return s.trim(); }).filter(Boolean);
+      else if (f === 'expiry_month' || f === 'expiry_year') draft[f] = v === '' ? null : parseInt(v, 10);
+      else if (f === 'linked_test_user_id') draft[f] = v || null;
+      else if (f === 'held_since' || f === 'requested_date') draft[f] = v || null;
+      else draft[f] = v;
+    });
+  }
+
+  function validateDraft() {
+    if (draft._table === 'portal_test_cards') {
+      var l4 = String(draft.last4 || '').trim();
+      if (!/^\d{4}$/.test(l4)) { alert('כרטיסי בדיקה: יש להזין בדיוק 4 ספרות אחרונות.'); return false; }
+      draft.last4 = l4;
+    }
+    return true;
+  }
+
+  async function saveDraft() {
+    readDraftFromForm();
+    if (!validateDraft()) return;
+    if (PREVIEW_DEMO && !sessionUser) { alert('מצב דמו — שמירה חסומה.'); return; }
+    if (!supabaseClient || !sessionUser) return;
+    var payload = Object.assign({}, draft);
+    delete payload._table; delete payload._isNew;
+    var table = draft._table;
+    var res;
+    if (draft._isNew) {
+      delete payload.id;
+      res = await supabaseClient.from(table).insert(payload).select().single();
+    } else {
+      var id = payload.id;
+      delete payload.id;
+      res = await supabaseClient.from(table).update(payload).eq('id', id).select().single();
+    }
+    if (res.error) { alert(res.error.message); return; }
+    selectedId = res.data.id;
+    draft = null;
+    await refreshActiveData();
+    openRow(selectedId);
+  }
+
+  async function deleteDraft() {
+    if (!draft || draft._isNew) return;
+    if (!confirm('למחוק רשומה זו?')) return;
+    if (PREVIEW_DEMO && !sessionUser) return;
+    var res = await supabaseClient.from(draft._table).delete().eq('id', draft.id);
+    if (res.error) { alert(res.error.message); return; }
+    draft = null; selectedId = null;
+    await refreshActiveData();
+    renderPanel();
+  }
+
+  async function deviceQuickAction(kind) {
+    if (!draft || draft._table !== 'portal_devices') return;
+    readDraftFromForm();
+    var holder = prompt(kind === 'take' ? 'שם המחזיק:' : 'מי מחזיר?', draft.current_holder || (sessionUser && sessionUser.email) || '');
+    if (holder === null) return;
+    if (kind === 'take') {
+      draft.current_holder = holder;
+      draft.status = 'in_use';
+      draft.held_since = new Date().toISOString().slice(0, 10);
+    } else {
+      draft.current_holder = '';
+      draft.status = 'available';
+      draft.held_since = null;
+    }
+    renderPanel();
+    if (PREVIEW_DEMO && !sessionUser) return;
+    if (!validateDraft()) return;
+    await saveDraft();
+    if (!draft) {
+      var devId = selectedId;
+      await supabaseClient.from('portal_device_history').insert({
+        device_id: devId,
+        action: kind,
+        holder: holder,
+        notes: '',
+        created_by: sessionUser.email
+      });
+      await loadDeviceHistory(devId);
+      renderPanel();
+    }
+  }
+
+  function renderTabNav() {
+    var nav = document.getElementById('tabNav');
+    nav.innerHTML = TABS.map(function (t) {
+      return '<button type="button" class="tab' + (t.id === activeTab ? ' active' : '') + '" data-tab="' + t.id + '">' + esc(t.label) + '</button>';
+    }).join('');
+    nav.querySelectorAll('.tab').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        activeTab = btn.getAttribute('data-tab');
+        filterChip = ''; searchQ = ''; selectedId = null; draft = null;
+        renderAll();
+        refreshActiveData().catch(function (e) { console.error(e); });
+      });
+    });
+  }
+
+  function renderControls() {
+    var tab = TABS.find(function (t) { return t.id === activeTab; });
+    var controls = document.getElementById('tabControls');
+    var banner = document.getElementById('tabBanner');
+    banner.innerHTML = '';
+    if (!tab || tab.id === 'home') {
+      controls.innerHTML = '';
+      return;
+    }
+    if (tab.banner === 'cards') {
+      banner.innerHTML = '<div class="banner-warn">⚠️ אין לאחסן כאן מספר כרטיס מלא, CVV, PIN או OTP. רק 4 ספרות אחרונות + הפניה למקום שבו הפרטים המלאים שמורים (למשל team password vault).</div>';
+    }
+    var chips = [];
+    if (tab.table === 'portal_devices') chips = [{v:'in_use',l:'בשימוש'},{v:'available',l:'פנוי'},{v:'broken',l:'תקול'}];
+    else if (tab.table === 'portal_test_users' || tab.table === 'portal_test_cards') chips = ['STG','INT','PROD'].map(function (x) { return {v:x,l:x}; });
+    else if (tab.table === 'portal_whitelisting') chips = [{v:'requested',l:'requested'},{v:'pending',l:'pending'},{v:'done',l:'done'}];
+    else if (tab.table === 'portal_assignments') chips = [{v:'available',l:'available'},{v:'partial',l:'partial'},{v:'not_available',l:'N/A'}];
+    controls.innerHTML =
+      '<div class="search-row">' +
+      '<input class="search" id="searchBox" type="search" placeholder="חיפוש…" value="' + esc(searchQ) + '" />' +
+      '<button type="button" class="btn btn-primary btn-sm" id="btnAdd">+ הוספה</button>' +
+      '<button type="button" class="btn btn-sm" id="btnReload">רענון</button></div>' +
+      (chips.length ? '<div class="chips">' + chips.map(function (c) {
+        return '<button type="button" class="chip' + (filterChip === c.v ? ' active' : '') + '" data-chip="' + esc(c.v) + '">' + esc(c.l) + '</button>';
+      }).join('') + '</div>' : '');
+    var sb = document.getElementById('searchBox');
+    if (sb) sb.addEventListener('input', function () { searchQ = sb.value; renderList(); });
+    document.getElementById('btnAdd').addEventListener('click', function () {
+      var t = TABS.find(function (x) { return x.id === activeTab; });
+      if (!t || !t.table) return;
+      draft = emptyDraft(t.table);
+      draft._table = t.table; draft._isNew = true;
+      selectedId = null;
+      renderPanel();
+    });
+    document.getElementById('btnReload').addEventListener('click', function () { refreshActiveData().catch(function (e) { alert(e.message); }); });
+    controls.querySelectorAll('.chip').forEach(function (ch) {
+      ch.addEventListener('click', function () {
+        var v = ch.getAttribute('data-chip');
+        filterChip = filterChip === v ? '' : v;
+        renderControls();
+        renderList();
+      });
+    });
+  }
+
+  function renderList() {
+    var host = document.getElementById('listHost');
+    if (activeTab === 'home') {
+      host.innerHTML = '<div class="dashboard-view">' + renderDashboard() + '</div>';
+      host.querySelectorAll('.stat').forEach(function (st) {
+        st.addEventListener('click', function () {
+          activeTab = st.getAttribute('data-goto');
+          renderAll();
+          refreshActiveData().catch(function () {});
+        });
+      });
+      return;
+    }
+    if (!document.getElementById('recordList')) {
+      host.innerHTML = '<div class="list" id="recordList"></div>';
+    }
+    var list = document.getElementById('recordList');
+    var rows = rowsForTab();
+    if (!rows.length) {
+      list.innerHTML = '<div class="empty">אין רשומות עדיין. לחצו <strong>+ הוספה</strong> או הריצו את ה-SQL והתחברו עם אימייל מאושר.</div>';
+      return;
+    }
+    list.innerHTML = rows.map(cardHtml).join('');
+    list.querySelectorAll('.card').forEach(function (card) {
+      card.addEventListener('click', function () { openRow(card.getAttribute('data-id')); });
+    });
+  }
+
+  function openRow(id) {
+    var tab = TABS.find(function (t) { return t.id === activeTab; });
+    if (!tab || !tab.table) return;
+    var row = (cache[tab.table] || []).find(function (r) { return String(r.id) === String(id); });
+    if (!row) return;
+    selectedId = row.id;
+    draft = JSON.parse(JSON.stringify(row));
+    draft._table = tab.table;
+    draft._isNew = false;
+    renderList();
+    renderPanel();
+  }
+
+  function renderAll() {
+    renderTabNav();
+    renderControls();
+    renderList();
+    if (!draft) renderPanel();
+  }
+
+  async function signInMagic() {
+    var email = (document.getElementById('authEmail').value || '').trim();
+    var msg = document.getElementById('authMsg');
+    msg.textContent = '';
+    if (!emailAllowed(email)) {
+      msg.textContent = 'רק @etoro.com או @etorocorp.com.';
+      return;
+    }
+    var res = await supabaseClient.auth.signInWithOtp({
+      email: email,
+      options: { emailRedirectTo: location.origin + location.pathname }
+    });
+    if (res.error) msg.textContent = res.error.message;
+    else msg.textContent = 'נשלח קישור למייל — בדקי גם ספאם.';
+  }
+
+  async function boot() {
+    document.getElementById('panelClose').addEventListener('click', function () { draft = null; selectedId = null; renderAll(); });
+    document.getElementById('btnMagicLink').addEventListener('click', signInMagic);
+    document.getElementById('btnSignOut').addEventListener('click', function () {
+      supabaseClient.auth.signOut().then(function () { sessionUser = null; setAuthUi(false); });
+    });
+
+    supabaseClient = initClient();
+    if (!supabaseClient) {
+      document.getElementById('authMsg').textContent = 'לא נטען supabase-js.';
+      return;
+    }
+
+    var sessRes = await supabaseClient.auth.getSession();
+    var sess = sessRes.data && sessRes.data.session;
+    if (sess && sess.user && emailAllowed(sess.user.email)) {
+      sessionUser = sess.user;
+      setAuthUi(true, sess.user.email);
+    } else if (sess && sess.user && !emailAllowed(sess.user.email)) {
+      await supabaseClient.auth.signOut();
+      document.getElementById('authMsg').textContent = 'דומיין אימייל לא מאושר.';
+      setAuthUi(false);
+    } else {
+      setAuthUi(false);
+    }
+
+    supabaseClient.auth.onAuthStateChange(function (event, s) {
+      if (s && s.user && emailAllowed(s.user.email)) {
+        sessionUser = s.user;
+        setAuthUi(true, s.user.email);
+        refreshActiveData().catch(function () {});
+      } else if (event === 'SIGNED_OUT') {
+        sessionUser = null;
+        setAuthUi(false);
+      }
+    });
+
+    renderAll();
+    if (sessionUser || PREVIEW_DEMO) {
+      try { await refreshActiveData(); } catch (e) { console.error(e); }
+    }
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
