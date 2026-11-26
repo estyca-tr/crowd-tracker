@@ -4,21 +4,29 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Crowd Test Tracker — Payments (Transactions)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;750&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #f6f7fb; --surface: #fff; --surface-2: #f7f8fb;
-  --border: #e5e7eb; --border-strong: #d1d5db;
-  --text: #11151f; --muted: #6b7280;
-  --accent: #4f46e5; --accent-soft: #eef2ff; --accent-hover: #4338ca;
-  --ok: #059669; --ok-bg: #ecfdf5; --warn: #d97706; --warn-bg: #fffbeb;
-  --bad: #dc2626; --bad-bg: #fef2f2; --info: #0284c7; --info-bg: #f0f9ff;
-  --pending: #6b7280; --pending-bg: #f3f4f6;
+  /* Restrained "Linear/Stripe-dashboard" light theme: clean white surfaces, very light cool-gray
+     page background, charcoal text, ONE subtle indigo accent used sparingly. No gradients, no
+     glow, no saturated color blocks — status color lives in small text/icons, not backgrounds. */
+  --bg: #fafafa; --surface: #fff; --surface-2: #f7f7f8;
+  --border: #e9e9ec; --border-strong: #d9d9de;
+  --text: #1c1c1f; --muted: #6e6e76;
+  --accent: #6366f1; --accent-soft: #eef0fe; --accent-hover: #4f52d9;
+  --ink: #1c1c1f; --ink-hover: #35353a;
+  --ok: #178559; --ok-bg: #ecfdf5; --warn: #b45309; --warn-bg: #fffbeb;
+  --bad: #c0362c; --bad-bg: #fef2f2; --info: #0f6fa8; --info-bg: #f0f9ff;
+  --pending: #6e6e76; --pending-bg: #f1f1f3;
   --chat-bg: #eef6ff; --chat-border: #93c5fd; --chat-head: #1d4ed8;
-  --violet: #7c3aed; --violet-bg: #f5f3ff; --violet-border: #ddd6fe;
-  --shadow-sm: 0 1px 2px rgba(17,21,31,.04);
-  --shadow: 0 1px 2px rgba(17,21,31,.03), 0 8px 24px rgba(17,21,31,.05);
-  --radius: 16px; --radius-sm: 10px;
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --violet: #6d4fd1; --violet-hover: #5c40b8; --violet-bg: #f4f2fc; --violet-border: #e1dbf5;
+  --shadow-sm: 0 1px 2px rgba(20,20,24,.04);
+  --shadow: 0 1px 2px rgba(20,20,24,.04), 0 4px 12px rgba(20,20,24,.05);
+  --glow: var(--shadow);
+  --radius: 14px; --radius-sm: 10px;
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -28,19 +36,25 @@ html, body { height: 100%; }
    in every card at once, not just the one with the long string. Capping overflow here means a
    stray wide element clips instead of dragging the whole layout along with it. */
 html, body { overflow-x: hidden; }
-body { margin: 0; font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+body {
+  margin: 0; font-family: var(--font); color: var(--text); line-height: 1.5; -webkit-font-smoothing: antialiased;
+  background: var(--bg);
+}
 button, input, select, textarea { font: inherit; }
 a { color: var(--accent); }
 .app { max-width: 1280px; margin: 0 auto; padding: 24px 20px 56px; }
-.topbar { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.brand h1 { margin: 0 0 4px; font-size: 1.45rem; font-weight: 700; letter-spacing: -.02em; }
-.brand .sub { color: var(--muted); font-size: .9rem; }
+.topbar {
+  display: flex; flex-wrap: wrap; gap: 14px; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px solid var(--border);
+}
+.brand h1 { margin: 0 0 4px; font-size: 1.35rem; font-weight: 650; letter-spacing: -.02em; color: var(--text); }
+.brand .sub { color: var(--muted); font-size: .88rem; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .btn { appearance: none; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 10px; padding: 9px 14px; cursor: pointer; font-weight: 600; font-size: .88rem; transition: border-color .12s, background-color .12s, box-shadow .12s; text-decoration: none; display: inline-flex; align-items: center; }
 .btn:hover { border-color: var(--border-strong); background: var(--surface-2); }
 .btn:active { transform: translateY(1px); }
-.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 650; box-shadow: 0 1px 2px rgba(79,70,229,.25); }
-.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
+.btn-primary { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 600; }
+.btn-primary:hover { background: var(--ink-hover); border-color: var(--ink-hover); color: #fff; }
 .btn-danger { color: var(--bad); border-color: #fecaca; }
 .btn-sm { padding: 7px 11px; font-size: .82rem; border-radius: 8px; }
 .btn-lg { padding: 13px 20px; font-size: 1rem; border-radius: 12px; font-weight: 650; }
@@ -57,14 +71,18 @@ a { color: var(--accent); }
   0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,.5); }
   50% { box-shadow: 0 0 0 6px rgba(99,102,241,0); }
 }
-.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 20px; }
-.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; box-shadow: var(--shadow-sm);
-  cursor: pointer; text-align: left; font: inherit; width: 100%; transition: border-color .12s, box-shadow .12s, transform .12s; }
-.stat:hover { border-color: var(--border-strong); transform: translateY(-1px); box-shadow: var(--shadow); }
-.stat.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-.stat .n { font-size: 1.35rem; font-weight: 700; letter-spacing: -.02em; }
-.stat .l { color: var(--muted); font-size: .76rem; margin-top: 3px; font-weight: 600; }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 20px; }
+/* Clean, quiet KPI cards: white surface, thin border, status conveyed only by the number's own
+   color (+ a small dot), never by a colored background block or a shadow glow. */
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; box-shadow: none;
+  cursor: pointer; text-align: left; font: inherit; width: 100%; transition: border-color .12s, background-color .12s;
+  position: relative; overflow: hidden; }
+.stat:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.stat.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.stat .n { font-size: 1.45rem; font-weight: 650; letter-spacing: -.02em; }
+.stat .l { color: var(--muted); font-size: .76rem; margin-top: 3px; font-weight: 500; }
 .stat.ok .n { color: var(--ok); } .stat.warn .n { color: var(--warn); } .stat.bad .n { color: var(--bad); } .stat.info .n { color: var(--info); }
+.stat.pending .n { color: var(--pending); }
 .howto { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 18px; overflow: hidden; }
 .howto summary { cursor: pointer; padding: 13px 16px; font-weight: 650; list-style: none; display: flex; align-items: center; gap: 8px; }
 .howto summary::-webkit-details-marker { display: none; }
@@ -169,7 +187,7 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
 .badge-triage-needinfo { background: #fef3c7; color: #b45309; }
 .badge-triage-confirmed { background: var(--bad-bg); color: var(--bad); }
 .badge-triage-notabug { background: var(--ok-bg); color: var(--ok); }
-.badge-triage-dup { background: #f3e8ff; color: #7e22ce; }
+.badge-triage-dup { background: var(--violet-bg); color: var(--violet); }
 .badge-applause { background: #ecfeff; color: #0e7490; }
 .badge-id { background: #f1f5f9; color: #334155; font-variant-numeric: tabular-nums; }
 .badge-q { background: #fff7ed; color: #c2410c; }
@@ -305,7 +323,7 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
 .tbtn.active[data-v="Need info"] { background: #fef3c7; color: #b45309; border-color: #fde68a; }
 .tbtn.active[data-v="Confirmed bug"] { background: var(--bad-bg); color: var(--bad); border-color: #fecaca; }
 .tbtn.active[data-v="Not a bug"] { background: var(--ok-bg); color: var(--ok); border-color: #a7f3d0; }
-.tbtn.active[data-v="Duplicate"] { background: #f3e8ff; color: #7e22ce; border-color: #e9d5ff; }
+.tbtn.active[data-v="Duplicate"] { background: var(--violet-bg); color: var(--violet); border-color: var(--violet-border); }
 .wbtn.active { background: var(--accent-soft); color: var(--accent); border-color: #c7d2fe; }
 .toggle-row { display: flex; align-items: center; gap: 10px; font-size: .9rem; font-weight: 650; }
 .toggle { width: 44px; height: 26px; border-radius: 999px; border: none; background: #cbd5e1; position: relative; cursor: pointer; padding: 0; transition: .15s; }
@@ -313,7 +331,7 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
 .toggle.on { background: var(--accent); }
 .toggle.on::after { inset-inline-start: 21px; }
 .row-btns { display: flex; flex-wrap: wrap; gap: 8px; }
-.jira-section { background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 12px; padding: 12px; }
+.jira-section { background: var(--violet-bg); border: 1px solid var(--violet-border); border-radius: var(--radius-sm); padding: 12px; }
 .jira-hint { margin: 0; font-size: .8rem; color: var(--muted); }
 .bug-value-row { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 8px 10px; }
 .bug-value-label { font-size: .78rem; font-weight: 750; color: #92400e; margin-inline-end: 2px; }
@@ -468,7 +486,7 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
   padding: 18px 20px; box-shadow: var(--shadow-sm); cursor: pointer;
   display: grid; gap: 10px; transition: border-color .15s, box-shadow .15s, transform .15s;
 }
-.cycle-card:hover { border-color: #c7d2fe; box-shadow: var(--shadow); transform: translateY(-1px); }
+.cycle-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
 .cycle-card-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
 .cycle-card h3 { margin: 0; font-size: 1.08rem; font-weight: 650; overflow-wrap: anywhere; }
 .cycle-meta { color: var(--muted); font-size: .82rem; display: flex; flex-wrap: wrap; gap: 8px; }
@@ -670,15 +688,15 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
 @media (max-width: 640px) { .jira-defaults-grid { grid-template-columns: 1fr; } }
 .jira-defaults-grid .field.full { grid-column: 1 / -1; }
 .jira-override-box {
-  margin-top: 10px; padding: 10px; background: #faf5ff; border: 1px dashed #e9d5ff; border-radius: 10px;
+  margin-top: 10px; padding: 10px; background: var(--violet-bg); border: 1px dashed var(--violet-border); border-radius: var(--radius-sm);
 }
 .jira-override-box > .ovr-label {
-  font-size: .72rem; font-weight: 800; color: #7e22ce; text-transform: uppercase;
+  font-size: .72rem; font-weight: 800; color: var(--violet); text-transform: uppercase;
   letter-spacing: .03em; margin-bottom: 8px;
 }
 .jira-resolved-hint { font-size: .75rem; color: var(--muted); margin-top: 6px; }
 .bug-template-box > summary .sum-hint { font-weight: 500; color: var(--muted); font-size: .78rem; margin-left: 6px; }
-.bt-section-title { font-size: .74rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: #7e22ce; margin: 14px 0 6px; }
+.bt-section-title { font-size: .74rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--violet); margin: 14px 0 6px; }
 .bt-auto-note { font-size: .76rem; color: var(--muted); background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin: 8px 0; }
 .bt-check { display: flex; align-items: center; gap: 8px; font-size: .82rem; margin-top: 8px; }
 .bt-check input { width: auto; }
@@ -724,9 +742,9 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
 .jb-status-x:hover { opacity:1; background:rgba(0,0,0,.07); }
 
 .jb-actions { margin:8px 0 4px; }
-.jb-primary { display:inline-block; background:#4f46e5; color:#fff !important; border:1px solid #4338ca;
+.jb-primary { display:inline-block; background:var(--ink); color:#fff !important; border:1px solid var(--ink);
   font-weight:800; padding:11px 20px; font-size:.95rem; text-decoration:none; border-radius:10px; }
-.jb-primary:hover { background:#4338ca; }
+.jb-primary:hover { background:var(--ink-hover); }
 .jb-primary.is-off { background:#c7d2fe; border-color:#c7d2fe; color:#3730a3 !important; }
 .jb-actions-hint { font-size:.78rem; color:var(--muted); margin:6px 0 10px; max-width:52ch; }
 .jb-key-field { max-width:360px; }
@@ -769,7 +787,7 @@ button.badge-chat-wait:hover { filter: brightness(.94); text-decoration: underli
 .req-checks { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .8rem; }
 .req-checks label { display: inline-flex; align-items: center; gap: 5px; font-weight: 500; color: inherit; }
 .req-checks input { width: auto; }
-.bt-req-box { margin-top: 10px; padding: 10px; border: 1px dashed #e9d5ff; background: #faf5ff; border-radius: 10px; }
+.bt-req-box { margin-top: 10px; padding: 10px; border: 1px dashed var(--violet-border); background: var(--violet-bg); border-radius: var(--radius-sm); }
 .bt-req-box select { border: 1px solid var(--border); border-radius: 10px; padding: 7px 9px; background: #fff; width: 100%; }
 .jira-create-note a { color: inherit; font-weight: 750; text-decoration: underline; }
 .jira-framed-hint { margin-top: 6px; font-weight: 600; }
@@ -778,14 +796,14 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .bt-ids-hint { font-size: .74rem; color: var(--muted); margin-top: 6px; line-height: 1.45; }
 .bt-ids-hint.ok { color: #065f46; }
 .bt-ids-hint.warn { color: #92400e; }
-.btn-bug-template { background: #7e22ce; border-color: #7e22ce; color: #fff; font-weight: 750; }
-.btn-bug-template:hover { background: #6b21a8; border-color: #6b21a8; color: #fff; }
+.btn-bug-template { background: var(--violet); border-color: var(--violet); color: #fff; font-weight: 650; }
+.btn-bug-template:hover { background: var(--violet-hover); border-color: var(--violet-hover); color: #fff; }
 .cta-line-inline { color: var(--muted); font-size: .8rem; }
 .modal.modal-wide { width: min(860px, 100%); max-height: calc(100vh - 32px); overflow: auto; gap: 6px; }
 .modal-head { display: flex; align-items: center; gap: 8px; }
 .modal-head h3 { flex: 1; }
 .modal-head .close { border: 0; background: transparent; font-size: 1.4rem; cursor: pointer; line-height: 1; padding: 2px 8px; }
-.bug-draft-preview > summary { cursor: pointer; font-size: .78rem; font-weight: 700; color: #7e22ce; }
+.bug-draft-preview > summary { cursor: pointer; font-size: .78rem; font-weight: 700; color: var(--violet); }
 .sync-pill {
   font-size: .78rem; font-weight: 700; padding: 6px 10px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--surface-2); color: var(--muted);
@@ -1309,6 +1327,44 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function deepClone(o) { return JSON.parse(JSON.stringify(o)); }
+
+  /** Reported: deleting a cycle "doesn't ask at all" — the native confirm() it used to call is
+   *  silently suppressed once a browser's "Prevent this page from creating additional dialogs"
+   *  checkbox gets ticked (easy to hit by accident after several quick confirm()s elsewhere in the
+   *  tool) — confirm() then just returns false/true with no dialog ever shown, so a delete can
+   *  silently go through (or silently no-op) with no visible prompt either way. A real in-page
+   *  modal (reusing the existing .modal-backdrop/.modal look) can't be muted that way. Returns a
+   *  Promise<boolean> — true only if the person clicked the confirm button. */
+  function showConfirmModal(opts) {
+    return new Promise(function (resolve) {
+      var backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop';
+      backdrop.innerHTML =
+        '<div class="modal" role="alertdialog" aria-modal="true">' +
+          '<h3>' + esc(opts.title || 'Are you sure?') + '</h3>' +
+          '<p style="margin:0;color:var(--muted);font-size:.9rem;line-height:1.5;">' + esc(opts.message || '') + '</p>' +
+          '<div class="row-btns" style="justify-content:flex-end;margin-top:4px;">' +
+            '<button type="button" class="btn" data-cm="cancel">' + esc(opts.cancelLabel || 'Cancel') + '</button>' +
+            '<button type="button" class="btn ' + (opts.danger ? 'btn-danger' : 'btn-primary') + '" data-cm="confirm">' + esc(opts.confirmLabel || 'Confirm') + '</button>' +
+          '</div>' +
+        '</div>';
+      function close(result) {
+        backdrop.remove();
+        document.removeEventListener('keydown', onKey);
+        resolve(result);
+      }
+      function onKey(e) { if (e.key === 'Escape') close(false); }
+      backdrop.addEventListener('click', function (e) {
+        if (e.target === backdrop) { close(false); return; }
+        var btn = e.target.closest('[data-cm]');
+        if (btn) close(btn.getAttribute('data-cm') === 'confirm');
+      });
+      document.addEventListener('keydown', onKey);
+      document.body.appendChild(backdrop);
+      var confirmBtn = backdrop.querySelector('[data-cm="confirm"]');
+      if (confirmBtn) confirmBtn.focus();
+    });
+  }
 
   /** Coerce chat to a real array (jsonb / odd deserializers can yield array-like objects). */
   /** Small deterministic hash (not cryptographic) — just needs two independent devices to land
@@ -6103,7 +6159,7 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   var cyclesSortBy = loadCyclesSortPref();
   var cyclesSearchTerm = '';
   var cyclesStatusFilter = ''; // '' = all; set by clicking a status stat tile
-  var CYCLE_STATUS_TONE = { 'New': 'info', 'In progress': 'warn', 'On hold': '', 'Done': 'ok' };
+  var CYCLE_STATUS_TONE = { 'New': 'info', 'In progress': 'warn', 'On hold': 'pending', 'Done': 'ok' };
   function filterCyclesForDisplay(cycles) {
     var q = cyclesSearchTerm.trim().toLowerCase();
     var out = cycles;
@@ -6397,13 +6453,20 @@ create policy "anon read write" on crowd_tracker for all to anon using (true) wi
   function deleteCycle(id) {
     var c = (state.cycles || []).find(function (x) { return x.id === id; });
     if (!c) return;
-    if (!confirm('Delete cycle “' + c.name + '” and all its transactions?')) return;
-    maybeSnapshotHistory('Before delete cycle: ' + c.name, true);
-    tombstone(c);
-    (c.transactions || []).forEach(tombstone);
-    if (activeCycleId === id) showCyclesLanding();
-    persist();
-    renderCyclesList();
+    showConfirmModal({
+      title: 'Delete cycle?',
+      message: 'Delete cycle “' + c.name + '” and all its transactions? This cannot be undone.',
+      confirmLabel: 'Delete cycle',
+      danger: true
+    }).then(function (ok) {
+      if (!ok) return;
+      maybeSnapshotHistory('Before delete cycle: ' + c.name, true);
+      tombstone(c);
+      (c.transactions || []).forEach(tombstone);
+      if (activeCycleId === id) showCyclesLanding();
+      persist();
+      renderCyclesList();
+    });
   }
 
   function renderAll() {
